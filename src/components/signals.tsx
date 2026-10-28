@@ -3,7 +3,7 @@ import type {
   HoldingVerdict,
   IpoVerdict,
   SipVerdict,
-} from "@/data/mockData";
+} from "@/types/domain";
 import { cn } from "@/lib/utils";
 
 export type AnyVerdict = IpoVerdict | HoldingVerdict | SipVerdict;

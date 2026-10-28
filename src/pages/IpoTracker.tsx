@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Activity, CalendarClock, Sparkles, TrendingUp } from "lucide-react";
 import { IpoTable } from "@/components/ipo-table";
 import { PageHeader } from "@/components/page-header";
-import { ipos } from "@/data/mockData";
+import { useIpos } from "@/hooks/use-market-data";
 import { cn } from "@/lib/utils";
 
 const filters = [
@@ -15,21 +15,27 @@ type FilterKey = (typeof filters)[number]["key"];
 
 export default function IpoTracker() {
   const [filter, setFilter] = useState<FilterKey>("all");
+  const { ipos, isLoading, error, refetch } = useIpos();
 
   const visible = useMemo(
     () => (filter === "all" ? ipos : ipos.filter((ipo) => ipo.type === filter)),
-    [filter],
+    [filter, ipos],
   );
 
   const stats = useMemo(() => {
     const openNow = ipos.filter((ipo) => ipo.status !== "Upcoming").length;
-    const avgScore =
-      ipos.reduce((total, ipo) => total + ipo.aiScore, 0) / ipos.length;
-    const bestGmp = Math.max(...ipos.map((ipo) => ipo.gmpPct));
-    const bestSub = Math.max(...ipos.map((ipo) => ipo.subscription));
+    const avgScore = ipos.length
+      ? ipos.reduce((total, ipo) => total + ipo.aiScore, 0) / ipos.length
+      : 0;
+    const bestGmp = ipos.length
+      ? Math.max(...ipos.map((ipo) => ipo.gmpPct))
+      : 0;
+    const bestSub = ipos.length
+      ? Math.max(...ipos.map((ipo) => ipo.subscription))
+      : 0;
 
     return { openNow, avgScore, bestGmp, bestSub };
-  }, []);
+  }, [ipos]);
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -41,14 +47,14 @@ export default function IpoTracker() {
           <>
             <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
               <CalendarClock className="size-3 text-primary" />
-              Last sync · 15:18 IST
+              Realtime · Supabase
             </span>
             <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
               <span className="relative flex size-1.5">
                 <span className="absolute inline-flex size-full animate-ping rounded-full bg-signal/70" />
                 <span className="relative inline-flex size-1.5 rounded-full bg-signal" />
               </span>
-              {stats.openNow} issues open now
+              {isLoading ? "Syncing" : `${stats.openNow} issues open now`}
             </span>
           </>
         }
@@ -59,7 +65,7 @@ export default function IpoTracker() {
           {
             label: "Open issues",
             value: String(stats.openNow),
-            note: "of six tracked issues",
+            note: "across the live feed",
             icon: Activity,
           },
           {
@@ -132,16 +138,39 @@ export default function IpoTracker() {
           </div>
         </div>
 
-        <div className="pb-1">
-          <IpoTable data={visible} detailed />
-        </div>
+        {isLoading ? (
+          <p className="px-4 py-10 text-center text-[11px] text-muted-foreground sm:px-5">
+            Loading issues from Supabase…
+          </p>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-2 px-4 py-10 text-center sm:px-5">
+            <p className="text-[11px] text-negative">{error.message}</p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="text-[11px] text-primary underline-offset-4 hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        ) : visible.length === 0 ? (
+          <p className="px-4 py-10 text-center text-[11px] text-muted-foreground sm:px-5">
+            {ipos.length === 0
+              ? "No issues have been published yet. Run the seed SQL or wait for the scraper."
+              : "No issues match this filter."}
+          </p>
+        ) : (
+          <div className="pb-1">
+            <IpoTable data={visible} detailed />
+          </div>
+        )}
 
         <div className="flex flex-col gap-1 border-t border-white/[0.06] px-4 py-3 text-[9px] text-muted-foreground/70 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <p>
             AI score blends GMP stability, subscription quality, anchor book and
             valuation versus listed peers.
           </p>
-          <p className="num">Source: simulated exchange feed</p>
+          <p className="num">Source: Supabase · ipos</p>
         </div>
       </section>
 
@@ -186,8 +215,8 @@ export default function IpoTracker() {
           ))}
         </div>
         <p className="mt-3 text-[9px] text-muted-foreground/60">
-          Scores are simulated for Phase 1. Gemini scoring and the GitHub Actions
-          ingestion pipeline arrive with the backend.
+          Scores are seeded for now. Gemini scoring and the GitHub Actions
+          ingestion pipeline arrive with the scraper.
         </p>
       </section>
     </div>

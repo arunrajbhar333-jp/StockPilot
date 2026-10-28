@@ -19,7 +19,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { stocks, type Stock } from "@/data/mockData";
+import { stocks } from "@/data/referenceData";
+import type { Stock } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
 const money = new Intl.NumberFormat("en-IN", {
@@ -302,8 +303,8 @@ export default function MarketCatalog() {
 
         <div className="flex flex-col gap-1 border-t border-white/[0.06] px-4 py-3 text-[9px] text-muted-foreground/70 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <p>
-            Prices and AI scores are simulated for Phase 1. The scraper will
-            expand this universe in the backend phase.
+            Prices and AI scores are local reference data. The exchange scraper
+            will replace this catalogue in the data phase.
           </p>
           <p className="num">Last scoring run · 28 October 2026, 15:18 IST</p>
         </div>

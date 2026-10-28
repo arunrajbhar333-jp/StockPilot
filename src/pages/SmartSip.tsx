@@ -6,20 +6,29 @@ import { Sparkline } from "@/components/sparkline";
 import { RiskBadge, VerdictBadge } from "@/components/signals";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { sips } from "@/data/mockData";
+import { useSips } from "@/hooks/use-market-data";
 import { formatInr, formatInrCompact, sipFutureValue } from "@/lib/format";
 import { cn } from "@/lib/utils";
-
-const startFunds = sips.filter((fund) => fund.aiVerdict === "START");
-const blendCagr =
-  startFunds.reduce((total, fund) => total + fund.cagrValue, 0) /
-  startFunds.length;
 
 const horizons = [5, 10, 15] as const;
 
 export default function SmartSip() {
+  const { sips, isLoading, error, refetch } = useSips();
   const [monthly, setMonthly] = useState(10000);
   const [years, setYears] = useState<number>(10);
+
+  const startFunds = useMemo(
+    () => sips.filter((fund) => fund.aiVerdict === "START"),
+    [sips],
+  );
+  const blendCagr = useMemo(
+    () =>
+      startFunds.length
+        ? startFunds.reduce((total, fund) => total + fund.cagrValue, 0) /
+          startFunds.length
+        : 0,
+    [startFunds],
+  );
 
   const projection = useMemo(() => {
     const corpus = sipFutureValue(monthly, blendCagr, years);
@@ -28,9 +37,9 @@ export default function SmartSip() {
       corpus,
       invested,
       gain: corpus - invested,
-      gainPct: ((corpus - invested) / invested) * 100,
+      gainPct: invested > 0 ? ((corpus - invested) / invested) * 100 : 0,
     };
-  }, [monthly, years]);
+  }, [monthly, years, blendCagr]);
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -46,6 +55,28 @@ export default function SmartSip() {
         }
       />
 
+      {isLoading ? (
+        <p className="glass rounded-2xl px-4 py-10 text-center text-[11px] text-muted-foreground">
+          Loading fund recommendations from Supabase…
+        </p>
+      ) : error ? (
+        <div className="glass flex flex-col items-center gap-2 rounded-2xl px-4 py-10 text-center">
+          <p className="text-[11px] text-negative">{error.message}</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void refetch()}
+            className="h-7 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            Retry
+          </Button>
+        </div>
+      ) : sips.length === 0 ? (
+        <p className="glass rounded-2xl px-4 py-10 text-center text-[11px] leading-relaxed text-muted-foreground">
+          No fund recommendations have been published yet. Add rows to the
+          Supabase sips table to populate this screen.
+        </p>
+      ) : (
       <section className="grid gap-3 xl:grid-cols-2">
         {sips.map((fund) => (
           <div
@@ -121,7 +152,7 @@ export default function SmartSip() {
                 onClick={() =>
                   toast.success(`SIP draft prepared for ${fund.fund}`, {
                     description:
-                      "Phase 1 simulation. No mandate was registered with the asset manager.",
+                      "No mandate was registered with the asset manager in this preview.",
                   })
                 }
                 className="h-8 flex-1 gap-1 rounded-lg border-primary/25 bg-primary/[0.08] text-[11px] font-medium text-primary hover:bg-primary/15 hover:text-primary sm:flex-none"
@@ -153,6 +184,7 @@ export default function SmartSip() {
           </div>
         ))}
       </section>
+      )}
 
       <section className="glass relative overflow-hidden rounded-2xl">
         <div className="pointer-events-none absolute -top-24 left-1/3 size-64 rounded-full bg-primary/[0.07] blur-3xl" />
@@ -223,8 +255,11 @@ export default function SmartSip() {
 
             <p className="mt-5 flex items-start gap-1.5 text-[10px] leading-relaxed text-muted-foreground/70">
               <Sparkles className="mt-0.5 size-2.5 shrink-0 text-ai" />
-              Blend of {startFunds.map((fund) => fund.fund).join(", ")} at an
-              equal weight. Illustrative only.
+              {startFunds.length > 0
+                ? `Blend of ${startFunds
+                    .map((fund) => fund.fund)
+                    .join(", ")} at an equal weight. Illustrative only.`
+                : "No AI-cleared funds yet. Projections stay at the invested amount until recommendations publish."}
             </p>
           </div>
 

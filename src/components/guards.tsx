@@ -1,12 +1,21 @@
 import type { ReactNode } from "react";
+import { Loader2 } from "lucide-react";
 import { Navigate, Outlet, useLocation } from "react-router";
-import type { ModuleKey } from "@/data/mockData";
+import type { ModuleKey } from "@/types/domain";
 import { useSession } from "@/lib/session";
 
 /** Sends signed-out visitors to the login screen, preserving the intended path. */
 export function RequireSession() {
-  const { user } = useSession();
+  const { user, isLoading } = useSession();
   const location = useLocation();
+
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </main>
+    );
+  }
 
   if (!user) {
     const returnTo = `${location.pathname}${location.search}`;

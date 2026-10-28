@@ -10,8 +10,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { portfolio, type Holding } from "@/data/mockData";
+import { usePortfolio } from "@/hooks/use-market-data";
 import { initials } from "@/lib/format";
+import { useSession } from "@/lib/session";
+import type { Holding } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
 interface Position extends Holding {
@@ -25,8 +27,8 @@ const money = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 0,
 });
 
-function buildPositions(): Position[] {
-  return portfolio.map((holding) => {
+function buildPositions(holdings: Holding[]): Position[] {
+  return holdings.map((holding) => {
     const invested = holding.quantity * holding.avgPrice;
     const current = holding.quantity * holding.ltp;
     const pnl = current - invested;
@@ -74,7 +76,14 @@ function PnlText({
 }
 
 export default function Portfolio() {
-  const positions = useMemo(buildPositions, []);
+  const { user } = useSession();
+  const {
+    holdings,
+    isLoading,
+    error,
+    refetch,
+  } = usePortfolio(user?.id ?? null);
+  const positions = useMemo(() => buildPositions(holdings), [holdings]);
 
   const totals = useMemo(() => {
     const invested = positions.reduce((sum, p) => sum + p.invested, 0);
@@ -89,7 +98,7 @@ export default function Portfolio() {
       invested,
       current,
       pnl,
-      pnlPct: (pnl / invested) * 100,
+      pnlPct: invested > 0 ? (pnl / invested) * 100 : 0,
       verdicts,
     };
   }, [positions]);
@@ -102,13 +111,13 @@ export default function Portfolio() {
   return (
     <div className="space-y-5 sm:space-y-6">
       <PageHeader
-        eyebrow={`Holdings · ${portfolio.length} positions`}
+        eyebrow={`Holdings · ${positions.length} position${positions.length === 1 ? "" : "s"}`}
         title="My portfolio"
         description="Each position carries a current AI verdict and the reasoning behind it. Verdicts refresh after the market closes."
         actions={
           <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
             <Sparkles className="size-3 text-ai" />
-            AI review · today at 15:24 IST
+            AI review · latest close
           </span>
         }
       />
@@ -122,7 +131,7 @@ export default function Portfolio() {
             ₹{money.format(totals.invested)}
           </p>
           <p className="mt-1 text-[10px] text-muted-foreground">
-            Across 6 holdings
+            Across {positions.length} holding{positions.length === 1 ? "" : "s"}
           </p>
         </div>
         <div className="glass lift rounded-2xl p-4">
@@ -169,31 +178,36 @@ export default function Portfolio() {
           <div className="mt-2.5 flex items-baseline gap-2">
             <p className="num text-xl font-medium">
               {totals.verdicts.BUY}
-              <span className="text-sm text-muted-foreground">/6</span>
+              <span className="text-sm text-muted-foreground">
+                /{positions.length}
+              </span>
             </p>
             <span className="text-[10px] text-signal">rated buy</span>
           </div>
           <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
             <span
               className="bg-signal"
-              style={{ width: `${(totals.verdicts.BUY / positions.length) * 100}%` }}
+              style={{
+                width: `${positions.length ? (totals.verdicts.BUY / positions.length) * 100 : 0}%`,
+              }}
             />
             <span
               className="bg-gold"
               style={{
-                width: `${(totals.verdicts.HOLD / positions.length) * 100}%`,
+                width: `${positions.length ? (totals.verdicts.HOLD / positions.length) * 100 : 0}%`,
               }}
             />
             <span
               className="bg-negative"
               style={{
-                width: `${(totals.verdicts.SELL / positions.length) * 100}%`,
+                width: `${positions.length ? (totals.verdicts.SELL / positions.length) * 100 : 0}%`,
               }}
             />
           </div>
         </div>
       </section>
 
+      {best ? (
       <section className="glass relative overflow-hidden rounded-2xl p-4 sm:p-5">
         <div className="pointer-events-none absolute -top-20 -right-10 size-48 rounded-full bg-ai/[0.07] blur-3xl" />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -234,6 +248,7 @@ export default function Portfolio() {
           </div>
         </div>
       </section>
+      ) : null}
 
       <section className="glass overflow-hidden rounded-2xl">
         <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-4 sm:px-5">
@@ -248,6 +263,28 @@ export default function Portfolio() {
           </span>
         </div>
 
+        {isLoading ? (
+          <p className="px-4 py-10 text-center text-[11px] text-muted-foreground sm:px-5">
+            Loading holdings from Supabase…
+          </p>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-2 px-4 py-10 text-center sm:px-5">
+            <p className="text-[11px] text-negative">{error.message}</p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="text-[11px] text-primary underline-offset-4 hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        ) : positions.length === 0 ? (
+          <p className="px-4 py-10 text-center text-[11px] leading-relaxed text-muted-foreground sm:px-5">
+            No holdings yet. Positions added to your Supabase account will appear
+            here.
+          </p>
+        ) : (
+          <>
         <div className="hidden md:block">
           <Table>
             <TableHeader>
@@ -383,6 +420,8 @@ export default function Portfolio() {
             );
           })}
         </div>
+          </>
+        )}
 
         <div className="border-t border-white/[0.06] px-4 py-3 text-[9px] text-muted-foreground/70 sm:px-5">
           AI verdicts combine price action, fundamentals and sector momentum.

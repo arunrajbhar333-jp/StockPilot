@@ -29,7 +29,7 @@ import {
   SheetDescription,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { notifications } from "@/data/mockData";
+import { notifications } from "@/data/referenceData";
 import { useSession } from "@/lib/session";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -107,8 +107,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const workspaceItems = visibleItems.filter((item) => !item.adminOnly);
   const controlItems = visibleItems.filter((item) => item.adminOnly);
 
-  const handleSignOut = () => {
-    logout();
+  const handleSignOut = async () => {
+    await logout();
     onNavigate?.();
     toast.success("Signed out of StockPilot");
     navigate("/");
@@ -230,10 +230,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-signal/70" />
               <span className="relative inline-flex size-1.5 rounded-full bg-signal" />
             </span>
-            Model synced
+            Realtime connected
           </p>
           <p className="mt-1 text-[10px] text-muted-foreground">
-            12 minutes ago · 6 issues scored
+            IPO, portfolio and SIP sync live
           </p>
           <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/10">
             <div className="h-full w-[86%] rounded-full bg-gradient-to-r from-ai to-primary" />
@@ -342,8 +342,8 @@ function AccountMenu() {
   const { user, logout } = useSession();
   const navigate = useNavigate();
 
-  const handleSignOut = () => {
-    logout();
+  const handleSignOut = async () => {
+    await logout();
     toast.success("Signed out of StockPilot");
     navigate("/");
   };
@@ -439,10 +439,10 @@ export function AppShell() {
 
         <footer className="mx-auto flex w-full max-w-[1440px] flex-col gap-1.5 border-t border-white/[0.05] px-4 py-5 text-[10px] text-muted-foreground/60 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <p>
-            Phase 1 preview · Simulated market data · Internal use only · Not
+            Supabase Auth · Realtime portfolio · Internal use only · Not
             investment advice.
           </p>
-          <p className="num">Scraper: idle · Gemini: active · v0.1.0</p>
+          <p className="num">Scraper: idle · Gemini: active · v0.2.0</p>
         </footer>
       </div>
 

@@ -20,10 +20,9 @@ import { Sparkline } from "@/components/sparkline";
 import { ChangePill } from "@/components/signals";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { demoCredentials, indices, marketMood, ipos } from "@/data/mockData";
-import { initials } from "@/lib/format";
+import { indices, loginSpotlight, marketMood } from "@/data/referenceData";
+import { isSupabaseConfigured, SUPABASE_SETUP_MESSAGE } from "@/lib/supabase";
 import { useSession } from "@/lib/session";
-import { cn } from "@/lib/utils";
 
 function safeReturnTo(value: string | null): string {
   if (
@@ -77,9 +76,7 @@ export default function Login() {
   const signIn = async (nextEmail: string, nextPassword: string) => {
     setPending(true);
     setError(null);
-    // Small delay so the hand-off to the dashboard feels deliberate.
-    await new Promise((resolve) => window.setTimeout(resolve, 450));
-    const result = login(nextEmail, nextPassword);
+    const result = await login(nextEmail, nextPassword);
     if (!result.ok) {
       setError(result.error);
       setPending(false);
@@ -93,13 +90,7 @@ export default function Login() {
     void signIn(email, password);
   };
 
-  const handleDemo = (nextEmail: string, nextPassword: string) => {
-    setEmail(nextEmail);
-    setPassword(nextPassword);
-    void signIn(nextEmail, nextPassword);
-  };
-
-  const topIpo = ipos[0];
+  const topIpo = loginSpotlight;
 
   return (
     <main className="relative min-h-dvh overflow-hidden">
@@ -118,7 +109,7 @@ export default function Login() {
                 <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
               </span>
               <span className="text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
-                Internal access · Phase 1
+                Internal access · Supabase secured
               </span>
             </span>
           </div>
@@ -247,6 +238,18 @@ export default function Login() {
               </span>
             </div>
 
+            {!isSupabaseConfigured ? (
+              <div
+                role="alert"
+                className="mt-4 flex items-start gap-2 rounded-lg border border-gold/25 bg-gold/10 px-3 py-2.5"
+              >
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-gold" />
+                <p className="text-[11px] leading-relaxed text-gold">
+                  {SUPABASE_SETUP_MESSAGE}
+                </p>
+              </div>
+            ) : null}
+
             <form onSubmit={handleSubmit} className="mt-6 space-y-4">
               <div className="space-y-1.5">
                 <label
@@ -339,54 +342,15 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="my-6 flex items-center gap-3">
-              <span className="h-px flex-1 bg-white/[0.07]" />
-              <span className="text-[9px] font-medium tracking-[0.2em] text-muted-foreground/60 uppercase">
-                Demo accounts
-              </span>
-              <span className="h-px flex-1 bg-white/[0.07]" />
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-2">
-              {demoCredentials.map((credential) => (
-                <button
-                  key={credential.email}
-                  type="button"
-                  onClick={() => handleDemo(credential.email, credential.password)}
-                  disabled={pending}
-                  className={cn(
-                    "group flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.02] p-2.5 text-left transition-all duration-300",
-                    "hover:border-primary/30 hover:bg-primary/[0.06] disabled:opacity-60",
-                  )}
-                >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-full border border-primary/20 bg-primary/10 font-display text-[10px] font-semibold text-primary">
-                    {credential.role === "admin"
-                      ? "AD"
-                      : initials(
-                          credential.email.split("@")[0]?.replace(".", " ") ?? "U",
-                        )}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[11px] font-medium text-foreground">
-                      {credential.label}
-                    </span>
-                    <span className="block truncate text-[10px] text-muted-foreground">
-                      {credential.email}
-                    </span>
-                  </span>
-                  <ArrowRight className="ml-auto size-3.5 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-                </button>
-              ))}
-            </div>
-
-            <p className="mt-4 flex items-center gap-1.5 text-[10px] text-muted-foreground/70">
-              <ShieldCheck className="size-3 text-signal" />
-              Allowlist enforced · Module access is granted per user
+            <p className="mt-5 flex items-start gap-1.5 border-t border-white/[0.07] pt-4 text-[10px] leading-relaxed text-muted-foreground/70">
+              <ShieldCheck className="mt-0.5 size-3 shrink-0 text-signal" />
+              Accounts are provisioned by a workspace administrator. Allowlist
+              and module access are enforced by Supabase.
             </p>
           </div>
 
           <p className="mt-4 text-center text-[10px] text-muted-foreground/50">
-            Phase 1 preview · Interface only · Simulated market data
+            Supabase authentication · Realtime data · Role-based access
           </p>
         </section>
       </div>

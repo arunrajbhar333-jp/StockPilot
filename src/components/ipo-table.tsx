@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Ipo } from "@/data/mockData";
+import type { Ipo } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
 export function IpoTable({

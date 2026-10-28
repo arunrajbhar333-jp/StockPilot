@@ -3,6 +3,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/app-shell";
 import { AdminGate, ModuleGate, RequireSession } from "@/components/guards";
 import { SessionProvider } from "@/lib/session";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
@@ -88,6 +89,16 @@ class RootErrorBoundary extends React.Component<
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
 
 
 function RouteSyncer() {
@@ -121,8 +132,9 @@ createRoot(document.getElementById("root")!).render(
         <VlyToolbar />
       </ToolbarErrorBoundary>
       <ConvexAuthProvider client={convex}>
-        <SessionProvider>
-          <BrowserRouter>
+        <QueryClientProvider client={queryClient}>
+          <SessionProvider>
+            <BrowserRouter>
             <RouteSyncer />
             <Suspense fallback={<RouteLoading />}>
               <Routes>
@@ -171,9 +183,10 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
-          </BrowserRouter>
-          <Toaster />
-        </SessionProvider>
+            </BrowserRouter>
+            <Toaster />
+          </SessionProvider>
+        </QueryClientProvider>
       </ConvexAuthProvider>
     </RootErrorBoundary>
   </StrictMode>,

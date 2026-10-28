@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AiScore, IpoTypeBadge, VerdictBadge } from "@/components/signals";
-import type { Ipo } from "@/data/mockData";
+import type { Ipo } from "@/types/domain";
 import { formatInr } from "@/lib/format";
 
 export function IpoApplyDialog({
@@ -124,7 +124,7 @@ export function IpoApplyDialog({
                 onClick={() => {
                   toast.success(`Application drafted for ${ipo.company}`, {
                     description:
-                      "Phase 1 simulation. No order was sent to the exchange.",
+                      "No order was sent to the exchange. Applications remain a UI preview.",
                   });
                   onOpenChange(false);
                 }}

@@ -19,14 +19,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  modules,
-  users as seedUsers,
-  type ModuleKey,
-  type User,
-  type UserStatus,
-} from "@/data/mockData";
+import { modules } from "@/data/referenceData";
+import { useCreateUser, useProfiles } from "@/hooks/use-profiles";
 import { initials } from "@/lib/format";
+import type { ModuleKey, UserStatus } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
 const moduleShortLabel: Record<ModuleKey, string> = {
@@ -36,7 +32,7 @@ const moduleShortLabel: Record<ModuleKey, string> = {
 };
 
 type FormErrors = Partial<
-  Record<"name" | "email" | "password" | "permissions", string>
+  Record<"name" | "email" | "password" | "permissions" | "form", string>
 >;
 
 const statusStyles: Record<UserStatus, { dot: string; text: string }> = {
@@ -65,7 +61,8 @@ function PermissionChips({ permissions }: { permissions: ModuleKey[] }) {
 }
 
 export default function Admin() {
-  const [users, setUsers] = useState<User[]>(seedUsers);
+  const { users, isLoading, error, refetch } = useProfiles(true);
+  const createUser = useCreateUser();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -132,30 +129,28 @@ export default function Admin() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    const today = new Intl.DateTimeFormat("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }).format(new Date());
-
-    const nextUser: User = {
-      id: users.reduce((max, user) => Math.max(max, user.id), 0) + 1,
-      name: trimmedName,
-      email: trimmedEmail,
-      role: "user",
-      permissions: selected,
-      status: "invited",
-      joinedOn: today,
-      lastActive: "Invite pending",
-    };
-
-    setUsers((current) => [nextUser, ...current]);
-    toast.success(`${nextUser.name} added to the workspace`, {
-      description: `Module access: ${selected
-        .map((item) => moduleShortLabel[item])
-        .join(", ")}. Invitation email is simulated in Phase 1.`,
-    });
-    handleOpenChange(false);
+    setErrors({});
+    createUser.mutate(
+      {
+        fullName: trimmedName,
+        email: trimmedEmail,
+        password,
+        permissions: selected,
+      },
+      {
+        onSuccess: () => {
+          toast.success(`${trimmedName} added to the workspace`, {
+            description: `Supabase Auth account created with access to ${selected
+              .map((item) => moduleShortLabel[item])
+              .join(", ")}.`,
+          });
+          handleOpenChange(false);
+        },
+        onError: (mutationError) => {
+          setErrors({ form: mutationError.message });
+        },
+      },
+    );
   };
 
   return (
@@ -238,6 +233,27 @@ export default function Admin() {
           </span>
         </div>
 
+        {isLoading ? (
+          <p className="px-4 py-10 text-center text-[11px] text-muted-foreground sm:px-5">
+            Loading workspace users from Supabase…
+          </p>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-2 px-4 py-10 text-center sm:px-5">
+            <p className="text-[11px] text-negative">{error.message}</p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="text-[11px] text-primary underline-offset-4 hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        ) : users.length === 0 ? (
+          <p className="px-4 py-10 text-center text-[11px] text-muted-foreground sm:px-5">
+            No profiles yet. Create the first user above.
+          </p>
+        ) : (
+          <>
         <div className="hidden md:block">
           <table className="w-full text-sm">
             <thead>
@@ -369,11 +385,13 @@ export default function Admin() {
             );
           })}
         </div>
+          </>
+        )}
 
         <div className="border-t border-white/[0.06] px-4 py-3 text-[9px] text-muted-foreground/70 sm:px-5">
-          Phase 1 preview. New users are held in local state only; Supabase
-          authentication, password hashing and invitation emails arrive with the
-          backend.
+          Users are created in Supabase Auth by the admin-create-user Edge
+          Function. Profile rows and permissions are written to the profiles
+          table.
         </div>
       </section>
 
@@ -550,6 +568,12 @@ export default function Admin() {
                 New accounts receive the standard user role. Administrator
                 access is granted separately and unlocks every module.
               </p>
+
+              {errors.form ? (
+                <p className="rounded-lg border border-negative/25 bg-negative/10 px-2.5 py-2 text-[10px] leading-relaxed text-negative">
+                  {errors.form}
+                </p>
+              ) : null}
             </div>
 
             <DialogFooter className="border-t border-white/[0.07] px-5 py-3.5">
@@ -565,9 +589,10 @@ export default function Admin() {
               <Button
                 type="submit"
                 size="sm"
+                disabled={createUser.isPending}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                Create user
+                {createUser.isPending ? "Creating account…" : "Create user"}
               </Button>
             </DialogFooter>
           </form>
