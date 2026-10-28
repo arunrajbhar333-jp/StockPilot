@@ -5,7 +5,7 @@ import {
   supabase,
 } from "@/lib/supabase";
 import { mapProfileRow, type ProfileRow } from "@/lib/mappers";
-import type { ModuleKey, WorkspaceUser } from "@/types/domain";
+import type { ModuleKey, UserRole, WorkspaceUser } from "@/types/domain";
 
 const PROFILES_KEY = ["profiles"] as const;
 
@@ -110,6 +110,48 @@ export function useDeleteUser() {
       if (error) throw new Error(await readFunctionError(error, "admin-delete-user"));
 
       const payload = data as { error?: string; deleted?: boolean } | null;
+      if (payload?.error) throw new Error(payload.error);
+      return payload;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: PROFILES_KEY });
+    },
+  });
+}
+
+export interface UpdateUserInput {
+  userId: string;
+  fullName?: string;
+  email?: string;
+  role?: UserRole;
+  permissions?: ModuleKey[];
+  /** Plain-text new password; the function stores only the hash. */
+  password?: string;
+}
+
+export function useUpdateUser() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: UpdateUserInput) => {
+      if (!supabase) throw new Error(SUPABASE_SETUP_MESSAGE);
+
+      const body: Record<string, unknown> = { userId: input.userId };
+      if (input.fullName !== undefined) body.full_name = input.fullName;
+      if (input.email !== undefined) body.email = input.email;
+      if (input.role !== undefined) body.role = input.role;
+      if (input.permissions !== undefined) body.permissions = input.permissions;
+      if (input.password !== undefined) body.password = input.password;
+
+      const { data, error } = await supabase.functions.invoke(
+        "admin-update-user",
+        { body },
+      );
+
+      if (error)
+        throw new Error(await readFunctionError(error, "admin-update-user"));
+
+      const payload = data as { error?: string; updated?: boolean } | null;
       if (payload?.error) throw new Error(payload.error);
       return payload;
     },

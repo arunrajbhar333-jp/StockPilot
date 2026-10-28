@@ -4,6 +4,7 @@ import {
   Check,
   KeyRound,
   Layers,
+  Pencil,
   ShieldCheck,
   Trash2,
   UserPlus,
@@ -27,10 +28,16 @@ import {
   useCreateUser,
   useDeleteUser,
   useProfiles,
+  useUpdateUser,
 } from "@/hooks/use-profiles";
 import { initials } from "@/lib/format";
 import { useSession } from "@/lib/session";
-import type { ModuleKey, UserStatus, WorkspaceUser } from "@/types/domain";
+import type {
+  ModuleKey,
+  UserStatus,
+  UserRole,
+  WorkspaceUser,
+} from "@/types/domain";
 import { cn } from "@/lib/utils";
 
 const moduleShortLabel: Record<ModuleKey, string> = {
@@ -40,7 +47,10 @@ const moduleShortLabel: Record<ModuleKey, string> = {
 };
 
 type FormErrors = Partial<
-  Record<"name" | "email" | "password" | "permissions" | "form", string>
+  Record<
+    "name" | "email" | "password" | "permissions" | "role" | "form",
+    string
+  >
 >;
 
 const statusStyles: Record<UserStatus, { dot: string; text: string }> = {
@@ -73,6 +83,7 @@ export default function Admin() {
   const { users, isLoading, error, refetch } = useProfiles(true);
   const createUser = useCreateUser();
   const deleteUser = useDeleteUser();
+  const updateUser = useUpdateUser();
   const [tab, setTab] = useState<"users" | "bots">("users");
   const [userToDelete, setUserToDelete] = useState<WorkspaceUser | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -82,6 +93,18 @@ export default function Admin() {
   const [password, setPassword] = useState("");
   const [selected, setSelected] = useState<ModuleKey[]>(["ipo"]);
   const [errors, setErrors] = useState<FormErrors>({});
+
+  // Edit user dialog
+  const [editUser, setEditUser] = useState<WorkspaceUser | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editRole, setEditRole] = useState<UserRole>("user");
+  const [editPermissions, setEditPermissions] = useState<ModuleKey[]>([]);
+  const [newPassword, setNewPassword] = useState("");
+  const [editErrors, setEditErrors] = useState<FormErrors>({});
+  const [pendingAction, setPendingAction] = useState<
+    "profile" | "password" | null
+  >(null);
 
   const stats = useMemo(() => {
     const admins = users.filter((user) => user.role === "admin").length;
@@ -127,6 +150,148 @@ export default function Admin() {
         setDeleteError(mutationError.message);
       },
     });
+  };
+
+  const resetEditDialog = () => {
+    setEditUser(null);
+    setEditName("");
+    setEditEmail("");
+    setEditRole("user");
+    setEditPermissions([]);
+    setNewPassword("");
+    setEditErrors({});
+    setPendingAction(null);
+  };
+
+  const clearEditError = (key: keyof FormErrors) => {
+    setEditErrors((current) => ({ ...current, [key]: undefined }));
+  };
+
+  const openEditDialog = (user: WorkspaceUser) => {
+    setEditErrors({});
+    setPendingAction(null);
+    setEditUser(user);
+    setEditName(user.name);
+    setEditEmail(user.email);
+    setEditRole(user.role);
+    setEditPermissions([...user.permissions]);
+    setNewPassword("");
+  };
+
+  const toggleEditModule = (key: ModuleKey) => {
+    setEditPermissions((current) =>
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key],
+    );
+    clearEditError("permissions");
+  };
+
+  const handleEditSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editUser) return;
+
+    const nextErrors: FormErrors = {};
+    const trimmedName = editName.trim();
+    const trimmedEmail = editEmail.trim().toLowerCase();
+
+    if (trimmedName.length < 2) {
+      nextErrors.name = "Enter the user's full name.";
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      nextErrors.email = "Enter a valid email address.";
+    } else if (
+      users.some(
+        (user) =>
+          user.id !== editUser.id &&
+          user.email.toLowerCase() === trimmedEmail,
+      )
+    ) {
+      nextErrors.email = "That email already has access.";
+    }
+    if (editPermissions.length === 0) {
+      nextErrors.permissions = "Assign at least one module.";
+    }
+    if (editUser.id === currentUser?.id && editRole !== "admin") {
+      nextErrors.role = "You cannot remove your own administrator access.";
+    }
+
+    setEditErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    setPendingAction("profile");
+    updateUser.mutate(
+      {
+        userId: editUser.id,
+        fullName: trimmedName,
+        email: trimmedEmail,
+        role: editRole,
+        permissions: editPermissions,
+      },
+      {
+        onSuccess: () => {
+          toast.success(`${trimmedName} updated`, {
+            description: `Role: ${
+              editRole === "admin" ? "Administrator" : "Member"
+            } · Modules: ${editPermissions
+              .map((item) => moduleShortLabel[item])
+              .join(", ")}.`,
+          });
+          resetEditDialog();
+        },
+        onError: (mutationError) => {
+          setEditErrors((current) => ({
+            ...current,
+            form: mutationError.message,
+          }));
+        },
+        onSettled: () => {
+          setPendingAction(null);
+        },
+      },
+    );
+  };
+
+  const handleResetPassword = () => {
+    if (!editUser) return;
+
+    if (newPassword.length < 6) {
+      setEditErrors((current) => ({
+        ...current,
+        password: "Use a password with at least 6 characters.",
+      }));
+      return;
+    }
+
+    const targetName = editUser.name;
+    setEditErrors((current) => ({
+      ...current,
+      password: undefined,
+      form: undefined,
+    }));
+    setPendingAction("password");
+
+    updateUser.mutate(
+      { userId: editUser.id, password: newPassword },
+      {
+        onSuccess: () => {
+          toast.success(`Password reset for ${targetName}`, {
+            description:
+              "The new password is active immediately; the previous one no longer works.",
+          });
+          setNewPassword("");
+        },
+        onError: (mutationError) => {
+          setEditErrors((current) => ({
+            ...current,
+            password: mutationError.message,
+          }));
+        },
+        onSettled: () => {
+          setPendingAction(null);
+        },
+      },
+    );
   };
 
   const toggleModule = (key: ModuleKey) => {
@@ -410,20 +575,31 @@ export default function Admin() {
                       {user.lastActive}
                     </td>
                     <td className="py-3 pr-5 pl-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openDeleteDialog(user)}
-                        disabled={isSelf}
-                        title={
-                          isSelf
-                            ? "You cannot remove your own account"
-                            : `Remove ${user.name}`
-                        }
-                        aria-label={`Remove ${user.name}`}
-                        className="grid size-8 place-items-center rounded-lg border border-transparent text-negative/75 transition-colors hover:border-negative/25 hover:bg-negative/10 hover:text-negative disabled:cursor-not-allowed disabled:opacity-30"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditDialog(user)}
+                          title={`Edit ${user.name}`}
+                          aria-label={`Edit ${user.name}`}
+                          className="grid size-8 place-items-center rounded-lg border border-transparent text-muted-foreground transition-colors hover:border-primary/25 hover:bg-primary/10 hover:text-primary"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openDeleteDialog(user)}
+                          disabled={isSelf}
+                          title={
+                            isSelf
+                              ? "You cannot remove your own account"
+                              : `Remove ${user.name}`
+                          }
+                          aria-label={`Remove ${user.name}`}
+                          className="grid size-8 place-items-center rounded-lg border border-transparent text-negative/75 transition-colors hover:border-negative/25 hover:bg-negative/10 hover:text-negative disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -464,6 +640,15 @@ export default function Admin() {
                     </span>
                     <button
                       type="button"
+                      onClick={() => openEditDialog(user)}
+                      title={`Edit ${user.name}`}
+                      aria-label={`Edit ${user.name}`}
+                      className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => openDeleteDialog(user)}
                       disabled={user.id === currentUser?.id}
                       title={
@@ -502,9 +687,10 @@ export default function Admin() {
         )}
 
         <div className="border-t border-white/[0.06] px-4 py-3 text-[9px] text-muted-foreground/70 sm:px-5">
-          Users are created and removed through the admin-create-user and
-          admin-delete-user Edge Functions. Profile rows, permissions and
-          portfolio holdings follow the Supabase Auth account.
+          Users are created, updated and removed through the
+          admin-create-user, admin-update-user and admin-delete-user Edge
+          Functions. Profile rows, permissions and portfolio holdings follow the
+          Supabase Auth account.
         </div>
       </section>
 
@@ -788,6 +974,254 @@ export default function Admin() {
               {deleteUser.isPending ? "Removing account…" : "Remove user"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editUser !== null}
+        onOpenChange={(next) => {
+          if (!next && !updateUser.isPending) {
+            resetEditDialog();
+          }
+        }}
+      >
+        <DialogContent className="glass-deep gap-0 overflow-hidden border-white/10 p-0 sm:max-w-md">
+          <form onSubmit={handleEditSubmit}>
+            <DialogHeader className="border-b border-white/[0.07] px-5 py-4 text-left">
+              <DialogTitle className="flex items-center gap-2 font-display text-base">
+                <Pencil className="size-4 text-primary" />
+                Edit user
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-[11px] leading-relaxed">
+                Update account details and module access for{" "}
+                <span className="font-medium text-foreground">
+                  {editUser?.name}
+                </span>
+                , or reset the password below.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="max-h-[60vh] space-y-3.5 overflow-y-auto px-5 py-4">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="edit-name"
+                  className="text-[11px] font-medium text-muted-foreground"
+                >
+                  Name
+                </label>
+                <Input
+                  id="edit-name"
+                  value={editName}
+                  onChange={(event) => {
+                    setEditName(event.target.value);
+                    clearEditError("name");
+                  }}
+                  placeholder="Ananya Deshpande"
+                  autoComplete="off"
+                  className="h-10 border-white/10 bg-black/30 text-[12px]"
+                />
+                {editErrors.name ? (
+                  <p className="text-[10px] text-negative">
+                    {editErrors.name}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="edit-email"
+                  className="text-[11px] font-medium text-muted-foreground"
+                >
+                  Email
+                </label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={editEmail}
+                  onChange={(event) => {
+                    setEditEmail(event.target.value);
+                    clearEditError("email");
+                  }}
+                  placeholder="ananya@stockpilot.io"
+                  autoComplete="off"
+                  className="h-10 border-white/10 bg-black/30 text-[12px]"
+                />
+                {editErrors.email ? (
+                  <p className="text-[10px] text-negative">
+                    {editErrors.email}
+                  </p>
+                ) : null}
+              </div>
+
+              <div>
+                <p className="text-[11px] font-medium text-muted-foreground">
+                  Role
+                </p>
+                <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-white/[0.07] bg-black/25 p-1">
+                  {(["user", "admin"] as UserRole[]).map((role) => (
+                    <button
+                      key={role}
+                      type="button"
+                      onClick={() => {
+                        setEditRole(role);
+                        clearEditError("role");
+                      }}
+                      className={cn(
+                        "flex-1 rounded-md px-2.5 py-1.5 text-[10px] font-semibold tracking-[0.1em] uppercase transition-colors",
+                        editRole === role
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {role === "admin" ? "Administrator" : "Member"}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground/70">
+                  Administrators unlock the Admin Panel and every module.
+                </p>
+                {editErrors.role ? (
+                  <p className="mt-1 text-[10px] text-negative">
+                    {editErrors.role}
+                  </p>
+                ) : null}
+              </div>
+
+              <div>
+                <p className="text-[11px] font-medium text-muted-foreground">
+                  Module access
+                </p>
+                <div className="mt-2 space-y-2">
+                  {modules.map((module) => {
+                    const checked = editPermissions.includes(module.key);
+                    return (
+                      <button
+                        key={module.key}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={checked}
+                        onClick={() => toggleEditModule(module.key)}
+                        className={cn(
+                          "flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all",
+                          checked
+                            ? "border-primary/25 bg-primary/[0.07]"
+                            : "border-white/[0.07] bg-white/[0.02] hover:border-white/15",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "mt-0.5 grid size-4 shrink-0 place-items-center rounded-[4px] border transition-colors",
+                            checked
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-white/20 bg-white/[0.03]",
+                          )}
+                        >
+                          {checked ? <Check className="size-3" /> : null}
+                        </span>
+                        <span>
+                          <span className="block text-[11px] font-medium text-foreground">
+                            {module.label}
+                          </span>
+                          <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
+                            {module.description}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {editErrors.permissions ? (
+                  <p className="mt-1 text-[10px] text-negative">
+                    {editErrors.permissions}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="border-t border-white/[0.07] pt-3.5">
+                <div className="flex items-start gap-2">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-md border border-negative/20 bg-negative/10">
+                    <KeyRound className="size-3 text-negative" />
+                  </span>
+                  <div>
+                    <p className="text-[11px] font-medium text-foreground">
+                      Reset password
+                    </p>
+                    <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                      Supabase stores only a secure hash, so the current
+                      password cannot be displayed or recovered. Type a new one
+                      to replace it.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    id="edit-new-password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(event) => {
+                      setNewPassword(event.target.value);
+                      clearEditError("password");
+                    }}
+                    placeholder="New password (min. 6 characters)"
+                    autoComplete="new-password"
+                    className="h-10 flex-1 border-white/10 bg-black/30 text-[12px]"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleResetPassword}
+                    disabled={
+                      updateUser.isPending && pendingAction === "password"
+                    }
+                    className="h-10 shrink-0 gap-1.5 rounded-lg border border-negative/25 bg-negative/10 px-3 text-[11px] font-semibold text-negative hover:bg-negative/15 hover:text-negative"
+                  >
+                    <KeyRound className="size-3.5" />
+                    {pendingAction === "password" && updateUser.isPending
+                      ? "Resetting…"
+                      : "Reset password"}
+                  </Button>
+                </div>
+
+                {editErrors.password ? (
+                  <p className="mt-1.5 text-[10px] text-negative">
+                    {editErrors.password}
+                  </p>
+                ) : null}
+              </div>
+
+              {editErrors.form ? (
+                <p className="rounded-lg border border-negative/25 bg-negative/10 px-2.5 py-2 text-[10px] leading-relaxed text-negative">
+                  {editErrors.form}
+                </p>
+              ) : null}
+            </div>
+
+            <DialogFooter className="border-t border-white/[0.07] px-5 py-3.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={resetEditDialog}
+                disabled={updateUser.isPending}
+                className="text-muted-foreground"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={
+                  updateUser.isPending && pendingAction === "profile"
+                }
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                {pendingAction === "profile" && updateUser.isPending
+                  ? "Saving changes…"
+                  : "Save changes"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

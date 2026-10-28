@@ -52,17 +52,19 @@ where email = 'you@company.com';
 ```
 
 Every additional teammate should be created from **Admin Panel → Create user**
-once the function below is deployed. The trigger assigns them the standard
+once the functions below are deployed. The trigger assigns them the standard
 `user` role and the Edge Function writes their module permissions.
 
 ## 4. Deploy the admin Edge Functions
 
-Creating or deleting an Auth user requires the service role key, which cannot
-live in the browser. Both functions check the caller's `profiles.role` before
-calling the Supabase admin API. `admin-delete-user` also blocks self-deletion.
+Creating, updating or deleting an Auth user requires the service role key,
+which cannot live in the browser. All three functions check the caller's
+`profiles.role` before calling the Supabase admin API. `admin-delete-user`
+blocks self-deletion, and `admin-update-user` blocks demoting your own account.
 
 ```bash
 supabase functions deploy admin-create-user
+supabase functions deploy admin-update-user
 supabase functions deploy admin-delete-user
 ```
 
@@ -70,8 +72,8 @@ Supabase injects `SUPABASE_URL`, `SUPABASE_ANON_KEY` and
 `SUPABASE_SERVICE_ROLE_KEY` into deployed functions automatically. No extra
 secrets are required.
 
-Until these functions are deployed, the Create user and Remove user actions
-will report that the function is unreachable.
+Until these functions are deployed, the Create user, Edit user and Remove user
+actions will report that the function is unreachable.
 
 ## 5. Optional holdings seed
 
