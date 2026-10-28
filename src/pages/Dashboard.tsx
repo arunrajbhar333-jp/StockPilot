@@ -91,9 +91,9 @@ function MoodRing({ score }: { score: number }) {
       <svg viewBox="0 0 120 120" className="absolute inset-0 size-full -rotate-90">
         <defs>
           <linearGradient id={`mood-${uid}`} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#63E2A6" />
-            <stop offset="55%" stopColor="#E3B34B" />
-            <stop offset="100%" stopColor="#F8E0A0" />
+            <stop offset="0%" stopColor="var(--signal)" />
+            <stop offset="55%" stopColor="var(--gold)" />
+            <stop offset="100%" stopColor="var(--brand-mark-1)" />
           </linearGradient>
         </defs>
         <circle
@@ -101,7 +101,7 @@ function MoodRing({ score }: { score: number }) {
           cy="60"
           r={radius}
           fill="none"
-          stroke="rgba(255,255,255,0.07)"
+          stroke="var(--track)"
           strokeWidth="7"
         />
         <circle

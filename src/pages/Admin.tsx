@@ -1,13 +1,16 @@
 import { useMemo, useState, type FormEvent } from "react";
 import {
+  Bot,
   Check,
   KeyRound,
   Layers,
   ShieldCheck,
+  Trash2,
   UserPlus,
   Users as UsersIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { BotManagement } from "@/components/bot-management";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,9 +23,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { modules } from "@/data/referenceData";
-import { useCreateUser, useProfiles } from "@/hooks/use-profiles";
+import {
+  useCreateUser,
+  useDeleteUser,
+  useProfiles,
+} from "@/hooks/use-profiles";
 import { initials } from "@/lib/format";
-import type { ModuleKey, UserStatus } from "@/types/domain";
+import { useSession } from "@/lib/session";
+import type { ModuleKey, UserStatus, WorkspaceUser } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
 const moduleShortLabel: Record<ModuleKey, string> = {
@@ -61,8 +69,13 @@ function PermissionChips({ permissions }: { permissions: ModuleKey[] }) {
 }
 
 export default function Admin() {
+  const { user: currentUser } = useSession();
   const { users, isLoading, error, refetch } = useProfiles(true);
   const createUser = useCreateUser();
+  const deleteUser = useDeleteUser();
+  const [tab, setTab] = useState<"users" | "bots">("users");
+  const [userToDelete, setUserToDelete] = useState<WorkspaceUser | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -91,6 +104,29 @@ export default function Admin() {
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (!next) resetForm();
+  };
+
+  const openDeleteDialog = (user: WorkspaceUser) => {
+    setDeleteError(null);
+    setUserToDelete(user);
+  };
+
+  const handleDelete = () => {
+    if (!userToDelete) return;
+
+    setDeleteError(null);
+    deleteUser.mutate(userToDelete.id, {
+      onSuccess: () => {
+        toast.success(`${userToDelete.name} removed from the workspace`, {
+          description:
+            "Supabase Auth, profile and portfolio rows were deleted. Recreate the account to restore access.",
+        });
+        setUserToDelete(null);
+      },
+      onError: (mutationError) => {
+        setDeleteError(mutationError.message);
+      },
+    });
   };
 
   const toggleModule = (key: ModuleKey) => {
@@ -158,19 +194,56 @@ export default function Admin() {
       <PageHeader
         eyebrow="Administration"
         title="Admin panel"
-        description="Approve who gets into StockPilot, then decide which modules they can open. Permissions govern both the sidebar and the routes behind it."
+        description={
+          tab === "users"
+            ? "Approve who gets into StockPilot, then decide which modules they can open. Permissions govern both the sidebar and the routes behind it."
+            : "Register the Telegram bot and review the Hinglish alert templates that the dispatcher will send to your team."
+        }
         actions={
-          <Button
-            onClick={() => setOpen(true)}
-            size="sm"
-            className="h-9 gap-1.5 rounded-lg bg-primary px-3 text-[12px] font-semibold text-primary-foreground shadow-[0_14px_30px_-14px_oklch(0.836_0.137_84/0.8),inset_0_1px_0_rgba(255,255,255,0.3)] hover:bg-primary/90"
-          >
-            <UserPlus className="size-3.5" />
-            Create user
-          </Button>
+          tab === "users" ? (
+            <Button
+              onClick={() => setOpen(true)}
+              size="sm"
+              className="primary-glow-sm h-9 gap-1.5 rounded-lg bg-primary px-3 text-[12px] font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              <UserPlus className="size-3.5" />
+              Create user
+            </Button>
+          ) : undefined
         }
       />
 
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          { key: "users" as const, label: "Workspace users", icon: UsersIcon },
+          { key: "bots" as const, label: "Bot management", icon: Bot },
+        ].map((item) => {
+          const Icon = item.icon;
+          const active = tab === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setTab(item.key)}
+              aria-pressed={active}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-medium transition-colors",
+                active
+                  ? "border-primary/25 bg-primary/10 text-primary"
+                  : "border-white/[0.07] bg-white/[0.02] text-muted-foreground hover:border-white/15 hover:text-foreground",
+              )}
+            >
+              <Icon className="size-3.5" />
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === "bots" ? (
+        <BotManagement />
+      ) : (
+        <>
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {[
           {
@@ -258,13 +331,20 @@ export default function Admin() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/[0.06]">
-                {["User", "Role", "Modules", "Status", "Last active"].map(
-                  (heading) => (
+                {[
+                  "User",
+                  "Role",
+                  "Modules",
+                  "Status",
+                  "Last active",
+                  "Actions",
+                ].map((heading) => (
                     <th
                       key={heading}
                       className={cn(
                         "px-4 py-2.5 text-left text-[9px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase",
                         heading === "Last active" && "text-right",
+                        heading === "Actions" && "pr-5 text-right",
                         heading === "User" && "pl-5",
                       )}
                     >
@@ -277,6 +357,7 @@ export default function Admin() {
             <tbody>
               {users.map((user) => {
                 const status = statusStyles[user.status];
+                const isSelf = user.id === currentUser?.id;
                 return (
                   <tr
                     key={user.id}
@@ -328,6 +409,22 @@ export default function Admin() {
                     <td className="num px-4 py-3 text-right text-[10px] text-muted-foreground">
                       {user.lastActive}
                     </td>
+                    <td className="py-3 pr-5 pl-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => openDeleteDialog(user)}
+                        disabled={isSelf}
+                        title={
+                          isSelf
+                            ? "You cannot remove your own account"
+                            : `Remove ${user.name}`
+                        }
+                        aria-label={`Remove ${user.name}`}
+                        className="grid size-8 place-items-center rounded-lg border border-transparent text-negative/75 transition-colors hover:border-negative/25 hover:bg-negative/10 hover:text-negative disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -354,16 +451,32 @@ export default function Admin() {
                       </p>
                     </div>
                   </div>
-                  <span
-                    className={cn(
-                      "inline-flex shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.1em] uppercase",
-                      user.role === "admin"
-                        ? "border-primary/25 bg-primary/10 text-primary"
-                        : "border-white/[0.09] bg-white/[0.04] text-muted-foreground",
-                    )}
-                  >
-                    {user.role}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "inline-flex shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.1em] uppercase",
+                        user.role === "admin"
+                          ? "border-primary/25 bg-primary/10 text-primary"
+                          : "border-white/[0.09] bg-white/[0.04] text-muted-foreground",
+                      )}
+                    >
+                      {user.role}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openDeleteDialog(user)}
+                      disabled={user.id === currentUser?.id}
+                      title={
+                        user.id === currentUser?.id
+                          ? "You cannot remove your own account"
+                          : `Remove ${user.name}`
+                      }
+                      aria-label={`Remove ${user.name}`}
+                      className="grid size-7 place-items-center rounded-md text-negative/75 transition-colors hover:bg-negative/10 hover:text-negative disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-3 flex items-center justify-between gap-3">
@@ -389,9 +502,9 @@ export default function Admin() {
         )}
 
         <div className="border-t border-white/[0.06] px-4 py-3 text-[9px] text-muted-foreground/70 sm:px-5">
-          Users are created in Supabase Auth by the admin-create-user Edge
-          Function. Profile rows and permissions are written to the profiles
-          table.
+          Users are created and removed through the admin-create-user and
+          admin-delete-user Edge Functions. Profile rows, permissions and
+          portfolio holdings follow the Supabase Auth account.
         </div>
       </section>
 
@@ -423,6 +536,8 @@ export default function Admin() {
           </div>
         </div>
       </section>
+        </>
+      )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="glass-deep gap-0 overflow-hidden border-white/10 p-0 sm:max-w-md">
@@ -596,6 +711,83 @@ export default function Admin() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={userToDelete !== null}
+        onOpenChange={(next) => {
+          if (!next && !deleteUser.isPending) {
+            setUserToDelete(null);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <DialogContent className="glass-deep gap-0 overflow-hidden border-white/10 p-0 sm:max-w-md">
+          <DialogHeader className="border-b border-white/[0.07] px-5 py-4 text-left">
+            <DialogTitle className="flex items-center gap-2 font-display text-base">
+              <Trash2 className="size-4 text-negative" />
+              Remove user
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-[11px] leading-relaxed">
+              This permanently deletes{" "}
+              <span className="font-medium text-foreground">
+                {userToDelete?.name}
+              </span>{" "}
+              from Supabase Auth and removes their profile, module access and
+              portfolio rows. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 px-5 py-4">
+            <div className="rounded-xl border border-negative/20 bg-negative/[0.06] p-3">
+              <p className="text-[11px] font-medium text-foreground">
+                {userToDelete?.email}
+              </p>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                {userToDelete?.role === "admin"
+                  ? "Administrator"
+                  : "Member"}{" "}
+                ·{" "}
+                {userToDelete && userToDelete.permissions.length > 0
+                  ? userToDelete.permissions
+                      .map((permission) => moduleShortLabel[permission])
+                      .join(", ")
+                  : "No modules"}
+              </p>
+            </div>
+
+            {deleteError ? (
+              <p className="rounded-lg border border-negative/25 bg-negative/10 px-2.5 py-2 text-[10px] leading-relaxed text-negative">
+                {deleteError}
+              </p>
+            ) : null}
+          </div>
+
+          <DialogFooter className="border-t border-white/[0.07] px-5 py-3.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setUserToDelete(null);
+                setDeleteError(null);
+              }}
+              disabled={deleteUser.isPending}
+              className="text-muted-foreground"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleteUser.isPending}
+            >
+              {deleteUser.isPending ? "Removing account…" : "Remove user"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

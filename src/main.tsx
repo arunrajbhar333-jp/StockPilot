@@ -3,6 +3,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/app-shell";
 import { AdminGate, ModuleGate, RequireSession } from "@/components/guards";
 import { SessionProvider } from "@/lib/session";
+import { ThemeProvider } from "@/lib/theme";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
@@ -128,6 +129,7 @@ function RouteSyncer() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
+      <ThemeProvider>
       <ToolbarErrorBoundary>
         <VlyToolbar />
       </ToolbarErrorBoundary>
@@ -188,6 +190,7 @@ createRoot(document.getElementById("root")!).render(
           </SessionProvider>
         </QueryClientProvider>
       </ConvexAuthProvider>
+      </ThemeProvider>
     </RootErrorBoundary>
   </StrictMode>,
 );

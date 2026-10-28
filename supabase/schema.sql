@@ -375,7 +375,49 @@ insert into public.sips (
 on conflict (id) do nothing;
 
 -- -----------------------------------------------------------------------------
--- 8. Manual steps after bootstrapping the first account
+-- 8. Telegram bots (admin-managed)
+-- -----------------------------------------------------------------------------
+-- Treat telegram_bot_token as a secret. Row-level security limits every
+-- operation on this table to administrators; the dispatcher reads it
+-- server-side with the service role key.
+
+create table if not exists public.bots (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(trim(name)) between 2 and 80),
+  telegram_bot_token text not null,
+  chat_id text not null,
+  created_by uuid default auth.uid()
+    references public.profiles (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.bots enable row level security;
+
+drop policy if exists "bots admin read" on public.bots;
+create policy "bots admin read"
+  on public.bots for select to authenticated
+  using (public.is_admin());
+
+drop policy if exists "bots admin insert" on public.bots;
+create policy "bots admin insert"
+  on public.bots for insert to authenticated
+  with check (public.is_admin());
+
+drop policy if exists "bots admin update" on public.bots;
+create policy "bots admin update"
+  on public.bots for update to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+drop policy if exists "bots admin delete" on public.bots;
+create policy "bots admin delete"
+  on public.bots for delete to authenticated
+  using (public.is_admin());
+
+grant select, insert, update, delete on public.bots to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- 9. Manual steps after bootstrapping the first account
 -- -----------------------------------------------------------------------------
 -- 1) Create your own account in Authentication → Users (Auto Confirm User).
 -- 2) Promote it to administrator:

@@ -12,9 +12,9 @@ export function BrandMark({ className }: { className?: string }) {
     >
       <defs>
         <linearGradient id={`gold-${uid}`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#F8E0A0" />
-          <stop offset="48%" stopColor="#E3B34B" />
-          <stop offset="100%" stopColor="#A9741C" />
+          <stop offset="0%" style={{ stopColor: "var(--brand-mark-1)" }} />
+          <stop offset="48%" style={{ stopColor: "var(--brand-mark-2)" }} />
+          <stop offset="100%" style={{ stopColor: "var(--brand-mark-3)" }} />
         </linearGradient>
         <linearGradient id={`plate-${uid}`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#1C1E29" />
@@ -36,7 +36,7 @@ export function BrandMark({ className }: { className?: string }) {
       />
       <path
         d="M17.5 37.5 H30.5"
-        stroke="#63E2A6"
+        stroke="var(--signal)"
         strokeWidth="1.6"
         strokeLinecap="round"
         opacity="0.85"

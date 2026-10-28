@@ -1,7 +1,7 @@
 # StockPilot backend setup
 
-The frontend now uses Supabase Auth plus four tables: `profiles`, `ipos`,
-`portfolio` and `sips`. Run the steps below in the Supabase project that
+The frontend now uses Supabase Auth plus five tables: `profiles`, `ipos`,
+`portfolio`, `sips` and `bots`. Run the steps below in the Supabase project that
 StockPilot should use.
 
 ## 1. Environment variables
@@ -22,13 +22,19 @@ A real `.env` file is not committed.
 Open **SQL Editor → New query**, paste the contents of
 [`schema.sql`](./schema.sql), and run it. It creates:
 
-- Tables, checks and indexes for profiles, IPOs, portfolio holdings and SIPs.
+- Tables, checks and indexes for profiles, IPOs, portfolio holdings, SIPs and
+  Telegram bots.
 - `handle_new_user()` so every Auth user gets a profile row.
 - `is_admin()` and `touch_last_active()` security-definer helpers.
 - Row Level Security: portfolio rows are visible only to their owner; IPOs and
-  SIPs are readable by signed-in members and writable only by admins.
+  SIPs are readable by signed-in members and writable only by admins. The
+  `bots` table is admin-only in every direction because it stores bot tokens.
 - Realtime publication for `ipos` and `portfolio`.
 - Seed rows for the six current IPOs and four SIP recommendations.
+
+The `bots` table is defined in section 8 of `schema.sql`. If you already ran an
+earlier version of the schema, re-running the whole file is safe: it only adds
+the new table, policies and grants.
 
 ## 3. Create the first administrator
 
@@ -49,22 +55,23 @@ Every additional teammate should be created from **Admin Panel → Create user**
 once the function below is deployed. The trigger assigns them the standard
 `user` role and the Edge Function writes their module permissions.
 
-## 4. Deploy the admin-create-user function
+## 4. Deploy the admin Edge Functions
 
-Creating an Auth user requires the service role key, which cannot live in the
-browser. The Edge Function checks the caller's `profiles.role` before calling
-`auth.admin.createUser`.
+Creating or deleting an Auth user requires the service role key, which cannot
+live in the browser. Both functions check the caller's `profiles.role` before
+calling the Supabase admin API. `admin-delete-user` also blocks self-deletion.
 
 ```bash
 supabase functions deploy admin-create-user
+supabase functions deploy admin-delete-user
 ```
 
 Supabase injects `SUPABASE_URL`, `SUPABASE_ANON_KEY` and
 `SUPABASE_SERVICE_ROLE_KEY` into deployed functions automatically. No extra
 secrets are required.
 
-Until this function is deployed, the Create user modal will report that the
-function is unreachable.
+Until these functions are deployed, the Create user and Remove user actions
+will report that the function is unreachable.
 
 ## 5. Optional holdings seed
 
@@ -88,6 +95,13 @@ where email = 'you@company.com';
 - IPO, portfolio and SIP screens read from Supabase through React Query.
   `ipos` and `portfolio` also subscribe to Postgres changes, so edits appear
   without a refresh.
+- The Admin Panel's **Bot management** tab writes to `bots` and masks tokens in
+  the UI. The Hinglish message builders live in
+  `src/lib/notification-templates.ts`; they are formatting helpers until the
+  dispatcher is connected.
+- Bot tokens are stored as text because the dispatcher must authenticate with
+  Telegram. RLS limits access to administrators, but database backups and admin
+  accounts should still be treated as sensitive.
 - Market indices, AI sentiment, desk alerts and the market catalogue are still
   local reference data. They will move to the scraper/Gemini jobs in the next
   phase.

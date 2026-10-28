@@ -263,7 +263,7 @@ export default function SmartSip() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(150deg,oklch(0.836_0.137_84/0.09),transparent_65%)] p-4 sm:p-5">
+          <div className="projection-tint rounded-2xl border border-white/[0.08] p-4 sm:p-5">
             <p className="text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
               Projected corpus · {years} years
             </p>

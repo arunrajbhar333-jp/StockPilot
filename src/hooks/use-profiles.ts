@@ -9,7 +9,10 @@ import type { ModuleKey, WorkspaceUser } from "@/types/domain";
 
 const PROFILES_KEY = ["profiles"] as const;
 
-async function readFunctionError(error: unknown): Promise<string> {
+async function readFunctionError(
+  error: unknown,
+  functionName: string,
+): Promise<string> {
   if (error && typeof error === "object" && "context" in error) {
     const context = (error as { context?: unknown }).context;
     if (context instanceof Response) {
@@ -23,11 +26,11 @@ async function readFunctionError(error: unknown): Promise<string> {
   }
   if (error instanceof Error && error.message) {
     if (error.message.toLowerCase().includes("failed to send a request")) {
-      return "The admin-create-user function is not deployed. Deploy it with `supabase functions deploy admin-create-user`.";
+      return `The ${functionName} function is not deployed. Deploy it with \`supabase functions deploy ${functionName}\`.`;
     }
     return error.message;
   }
-  return "Unable to create the user. Check the Edge Function deployment and try again.";
+  return "The admin request failed. Check the Edge Function deployment and try again.";
 }
 
 export function useProfiles(enabled: boolean) {
@@ -80,9 +83,33 @@ export function useCreateUser() {
         },
       );
 
-      if (error) throw new Error(await readFunctionError(error));
+      if (error) throw new Error(await readFunctionError(error, "admin-create-user"));
 
       const payload = data as { error?: string; userId?: string } | null;
+      if (payload?.error) throw new Error(payload.error);
+      return payload;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: PROFILES_KEY });
+    },
+  });
+}
+
+export function useDeleteUser() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      if (!supabase) throw new Error(SUPABASE_SETUP_MESSAGE);
+
+      const { data, error } = await supabase.functions.invoke(
+        "admin-delete-user",
+        { body: { userId } },
+      );
+
+      if (error) throw new Error(await readFunctionError(error, "admin-delete-user"));
+
+      const payload = data as { error?: string; deleted?: boolean } | null;
       if (payload?.error) throw new Error(payload.error);
       return payload;
     },

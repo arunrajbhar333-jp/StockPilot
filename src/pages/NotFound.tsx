@@ -7,7 +7,7 @@ export default function NotFound() {
   return (
     <main className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 py-16">
       <div className="grid-fade pointer-events-none absolute inset-0 -z-10 opacity-50" />
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(50%_45%_at_50%_20%,oklch(0.836_0.137_84/0.12),transparent_65%)]" />
+      <div className="notfound-glow pointer-events-none absolute inset-0 -z-10" />
 
       <BrandLockup />
       <p className="num mt-10 text-[11px] tracking-[0.3em] text-muted-foreground">

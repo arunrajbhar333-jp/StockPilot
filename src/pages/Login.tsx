@@ -94,7 +94,7 @@ export default function Login() {
 
   return (
     <main className="relative min-h-dvh overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(70%_55%_at_15%_-10%,oklch(0.836_0.137_84/0.16),transparent_60%),radial-gradient(55%_45%_at_92%_8%,oklch(0.72_0.145_292/0.14),transparent_62%)]" />
+      <div className="auth-aurora pointer-events-none absolute inset-0 -z-10" />
       <div className="grid-fade pointer-events-none absolute inset-0 -z-10 opacity-60" />
 
       <div className="relative mx-auto grid min-h-dvh w-full max-w-[1240px] items-center gap-10 px-5 py-10 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:py-16">
@@ -181,7 +181,7 @@ export default function Login() {
                   </div>
                 </div>
               ))}
-              <div className="rounded-xl border border-primary/15 bg-[linear-gradient(150deg,oklch(0.836_0.137_84/0.14),oklch(1_0_0/0.01))] p-2.5">
+              <div className="tile-primary rounded-xl border border-primary/15 p-2.5">
                 <p className="text-[9px] font-medium tracking-wide text-muted-foreground">
                   AI MARKET MOOD
                 </p>
@@ -221,7 +221,7 @@ export default function Login() {
 
         {/* Login */}
         <section className="relative min-w-0">
-          <div className="pointer-events-none absolute -inset-6 -z-10 rounded-[2.5rem] bg-[radial-gradient(60%_60%_at_50%_40%,oklch(0.836_0.137_84/0.16),transparent_70%)] blur-2xl" />
+          <div className="auth-card-glow pointer-events-none absolute -inset-6 -z-10 rounded-[2.5rem] blur-2xl" />
           <div className="glass-deep rounded-3xl p-5 sm:p-8">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -326,7 +326,7 @@ export default function Login() {
               <Button
                 type="submit"
                 disabled={pending}
-                className="h-11 w-full gap-2 rounded-xl bg-primary text-[13px] font-semibold text-primary-foreground shadow-[0_18px_40px_-18px_oklch(0.836_0.137_84/0.8),inset_0_1px_0_rgba(255,255,255,0.35)] transition-all hover:bg-primary/90"
+                className="primary-glow h-11 w-full gap-2 rounded-xl bg-primary text-[13px] font-semibold text-primary-foreground transition-all hover:bg-primary/90"
               >
                 {pending ? (
                   <>

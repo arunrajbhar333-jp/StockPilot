@@ -6,11 +6,13 @@ import {
   LineChart,
   LogOut,
   Menu,
+  Moon,
   PieChart,
   Repeat2,
   Rocket,
   ShieldCheck,
   Sparkles,
+  Sun,
 } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -31,6 +33,7 @@ import {
 } from "@/components/ui/sheet";
 import { notifications } from "@/data/referenceData";
 import { useSession } from "@/lib/session";
+import { useTheme } from "@/lib/theme";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -117,7 +120,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className="relative px-5 pt-6 pb-2">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(60%_100%_at_50%_0%,oklch(0.836_0.137_84/0.16),transparent_70%)]" />
+        <div className="brand-aurora pointer-events-none absolute inset-x-0 top-0 h-24" />
         <Link to="/dashboard" onClick={onNavigate} className="relative inline-flex">
           <BrandLockup />
         </Link>
@@ -218,7 +221,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           </>
         )}
 
-        <div className="mt-7 rounded-xl border border-white/[0.07] bg-[linear-gradient(140deg,oklch(0.72_0.145_292/0.14),oklch(1_0_0/0.01)_55%,oklch(0.836_0.137_84/0.08))] p-3.5">
+        <div className="engine-tint mt-7 rounded-xl border border-white/[0.07] p-3.5">
           <div className="flex items-center justify-between">
             <p className="eyebrow text-[9px] text-muted-foreground">
               Gemini engine
@@ -281,6 +284,27 @@ function MarketStatusPill() {
       </span>
       <span className="num text-[10px] text-muted-foreground">15:30 IST</span>
     </div>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  const nextTheme = theme === "dark" ? "light" : "dark";
+
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      aria-label={`Switch to ${nextTheme} mode`}
+      title={`Switch to ${nextTheme} mode`}
+      className="grid size-9 place-items-center rounded-lg border border-white/[0.07] bg-white/[0.03] text-muted-foreground transition-colors hover:border-white/15 hover:text-foreground"
+    >
+      {theme === "dark" ? (
+        <Sun className="size-4" />
+      ) : (
+        <Moon className="size-4" />
+      )}
+    </button>
   );
 }
 
@@ -428,6 +452,7 @@ export function AppShell() {
 
           <div className="flex items-center gap-2">
             <MarketStatusPill />
+            <ThemeToggle />
             <NotificationsMenu />
             <AccountMenu />
           </div>

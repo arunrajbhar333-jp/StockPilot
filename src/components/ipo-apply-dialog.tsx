@@ -80,7 +80,7 @@ export function IpoApplyDialog({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-ai/20 bg-[linear-gradient(140deg,oklch(0.72_0.145_292/0.12),transparent_70%)] p-3.5">
+              <div className="ai-note-tint rounded-xl border border-ai/20 p-3.5">
                 <div className="flex items-center justify-between">
                   <p className="flex items-center gap-1.5 text-[10px] font-medium tracking-[0.1em] text-ai uppercase">
                     <Sparkles className="size-3" /> AI underwriting note
