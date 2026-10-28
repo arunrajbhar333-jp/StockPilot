@@ -134,47 +134,52 @@
   --panel: oklch(0.2 0.014 264);
 }
 
-/* Light theme: white canvas, slate ink, corporate blue accent. */
+/* Light theme: bg-gray-50 canvas, solid bg-white cards with
+   border-gray-200 + shadow-sm, text-gray-900/500/700 hierarchy, and the
+   corporate blue accent (bg-blue-600 / text-blue-600). Every rule in this
+   block and in the light-mode section below is scoped to `.light`, which only
+   exists on <html> when the theme toggle is set to 'light'. Dark mode is
+   untouched. */
 .light {
   --color-white: oklch(0.22 0.02 260);
 
-  --background: #ffffff;
-  --foreground: oklch(0.235 0.025 260);
-  --card: oklch(0.98 0.003 250);
-  --card-foreground: oklch(0.235 0.025 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.235 0.025 260);
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --secondary: oklch(0.955 0.006 250);
-  --secondary-foreground: oklch(0.28 0.025 260);
-  --muted: oklch(0.955 0.006 250);
-  --muted-foreground: oklch(0.51 0.02 258);
-  --accent: oklch(0.945 0.01 250);
-  --accent-foreground: oklch(0.235 0.025 260);
+  --background: #f9fafb; /* bg-gray-50 — cards now stand out */
+  --foreground: #111827; /* text-gray-900 — headings */
+  --card: #ffffff; /* bg-white */
+  --card-foreground: #111827;
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+  --primary: #2563eb; /* bg-blue-600 — replaces the gold accent */
+  --primary-foreground: #ffffff; /* text-white */
+  --secondary: #f3f4f6; /* bg-gray-100 */
+  --secondary-foreground: #374151;
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280; /* text-gray-500 — sub-headings, stats */
+  --accent: #f3f4f6;
+  --accent-foreground: #111827;
   --destructive: #dc2626;
-  --border: oklch(0.22 0.02 260 / 10%);
-  --input: oklch(0.22 0.02 260 / 13%);
+  --border: #e5e7eb; /* border-gray-200 */
+  --input: #d1d5db; /* border-gray-300 */
   --ring: rgb(37 99 235 / 45%);
   --chart-1: #2563eb;
   --chart-2: #059669;
   --chart-3: #7c3aed;
   --chart-4: #0284c7;
   --chart-5: #dc2626;
-  --sidebar: oklch(0.985 0.003 250);
-  --sidebar-foreground: oklch(0.235 0.025 260);
+  --sidebar: #ffffff; /* sidebar bg-white */
+  --sidebar-foreground: #111827;
   --sidebar-primary: #2563eb;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: oklch(0.955 0.006 250);
-  --sidebar-accent-foreground: oklch(0.235 0.025 260);
-  --sidebar-border: oklch(0.22 0.02 260 / 10%);
+  --sidebar-accent: #f3f4f6;
+  --sidebar-accent-foreground: #111827;
+  --sidebar-border: #e5e7eb;
   --sidebar-ring: rgb(37 99 235 / 40%);
 
   --signal: #059669;
   --negative: #dc2626;
   --ai: #7c3aed;
-  --gold: #2563eb;
-  --panel: oklch(0.975 0.004 250);
+  --gold: #2563eb; /* neutral "gold" accents render as corporate blue */
+  --panel: #f3f4f6;
 
   --brand-mark-1: #93c5fd;
   --brand-mark-2: #2563eb;
@@ -445,43 +450,30 @@
   background-clip: padding-box;
 }
 
+/* Cards: bg-white border border-gray-200 shadow-sm rounded-xl */
 .light .glass {
-  background-image: linear-gradient(
-    155deg,
-    rgb(248 250 252 / 0.96) 0%,
-    rgb(241 245 249 / 0.88) 46%,
-    rgb(248 250 252 / 0.94) 100%
-  );
-  background-color: rgb(248 250 252 / 0.9);
-  border-color: rgb(15 23 42 / 0.08);
-  box-shadow:
-    0 30px 60px -34px rgb(15 23 42 / 0.28),
-    0 1px 0 0 rgb(255 255 255 / 0.9),
-    inset 0 1px 0 0 rgb(255 255 255 / 0.95),
-    inset 0 -1px 0 0 rgb(15 23 42 / 0.04);
+  background-image: none;
+  background-color: #ffffff;
+  border-color: #e5e7eb;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
 }
 
+/* Dialogs / login card: same white surface, slightly stronger elevation */
 .light .glass-deep {
-  background-image: linear-gradient(
-    160deg,
-    rgb(255 255 255 / 0.98) 0%,
-    rgb(248 250 252 / 0.94) 50%,
-    rgb(255 255 255 / 0.98) 100%
-  );
-  background-color: rgb(255 255 255 / 0.94);
-  border-color: rgb(15 23 42 / 0.1);
+  background-image: none;
+  background-color: #ffffff;
+  border-color: #e5e7eb;
   box-shadow:
-    0 44px 90px -40px rgb(15 23 42 / 0.35),
-    inset 0 1px 0 0 rgb(255 255 255 / 1),
-    inset 0 -20px 40px -30px rgb(37 99 235 / 0.12);
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 
 .light .lift:hover {
-  border-color: rgb(37 99 235 / 0.2);
+  border-color: #d1d5db;
   box-shadow:
-    0 46px 80px -38px rgb(15 23 42 / 0.35),
-    0 0 44px -22px rgb(37 99 235 / 0.25),
-    inset 0 1px 0 0 rgb(255 255 255 / 1);
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 
 .light .grid-fade {
@@ -572,15 +564,11 @@
 }
 
 .light .primary-glow {
-  box-shadow:
-    0 18px 36px -18px rgb(37 99 235 / 0.45),
-    inset 0 1px 0 rgb(255 255 255 / 0.5);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
 }
 
 .light .primary-glow-sm {
-  box-shadow:
-    0 14px 28px -14px rgb(37 99 235 / 0.4),
-    inset 0 1px 0 rgb(255 255 255 / 0.45);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
 }
 
 .light .bg-black\/20 {
@@ -601,4 +589,76 @@
 
 .light [data-slot="slider-thumb"] {
   background-color: #ffffff;
+}
+
+/* --------------------------------------------------------------------------
+   Light-mode component rules. Each rule is an exact equivalent of the
+   requested Tailwind classes, scoped to `.light` so nothing changes when the
+   theme is 'dark'.
+   ----------------------------------------------------------------------- */
+
+/* Table / card separators: border-b border-gray-200 */
+.light .border-white\/5,
+.light .border-white\/10,
+.light .border-white\/\[0\.05\],
+.light .border-white\/\[0\.06\],
+.light .border-white\/\[0\.07\],
+.light .border-white\/\[0\.08\],
+.light .border-white\/\[0\.09\] {
+  border-color: #e5e7eb;
+}
+
+.light .border-white\/20 {
+  border-color: #d1d5db;
+}
+
+.light .divide-white\/\[0\.05\] > :not(:last-child),
+.light .divide-white\/\[0\.06\] > :not(:last-child),
+.light .divide-white\/10 > :not(:last-child) {
+  border-color: #e5e7eb;
+}
+
+.light .hover\:border-white\/5:hover,
+.light .hover\:border-white\/15:hover {
+  border-color: #d1d5db;
+}
+
+/* Tables: headers text-gray-500, data (emails, timestamps) text-gray-700 */
+.light table th {
+  color: #6b7280;
+}
+
+.light table td .text-muted-foreground,
+.light table td.num.text-muted-foreground {
+  color: #374151;
+}
+
+/* Sidebar: bg-white border-r border-gray-200, text-gray-600 hover:text-gray-900 */
+.light aside,
+.light [data-slot="sheet-content"] {
+  background-color: #ffffff;
+  border-color: #e5e7eb;
+}
+
+.light aside a.text-muted-foreground,
+.light [data-slot="sheet-content"] a.text-muted-foreground {
+  color: #4b5563;
+}
+
+.light aside a.text-muted-foreground:hover,
+.light [data-slot="sheet-content"] a.text-muted-foreground:hover {
+  color: #111827;
+}
+
+.light aside .text-muted-foreground\/70,
+.light [data-slot="sheet-content"] .text-muted-foreground\/70 {
+  color: #4b5563;
+}
+
+/* Active menu item: bg-blue-50 text-blue-600 (React Router NavLink) */
+.light a[aria-current="page"] {
+  background-color: #eff6ff;
+  background-image: none;
+  color: #2563eb;
+  border-color: #dbeafe;
 }
