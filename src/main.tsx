@@ -14,6 +14,7 @@ import "./index.css";
 // Lazy load route components for better code splitting
 const Login = lazy(() => import("./pages/Login.tsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
+const MarketCatalog = lazy(() => import("./pages/MarketCatalog.tsx"));
 const IpoTracker = lazy(() => import("./pages/IpoTracker.tsx"));
 const Portfolio = lazy(() => import("./pages/Portfolio.tsx"));
 const SmartSip = lazy(() => import("./pages/SmartSip.tsx"));
@@ -131,6 +132,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route element={<RequireSession />}>
                   <Route element={<AppShell />}>
                     <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/catalog" element={<MarketCatalog />} />
                     <Route
                       path="/ipo"
                       element={

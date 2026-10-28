@@ -34,21 +34,21 @@ export default function IpoTracker() {
   return (
     <div className="space-y-5 sm:space-y-6">
       <PageHeader
-        eyebrow="Primary market"
+        eyebrow="Primary market · Live issues"
         title="IPO tracker"
-        description="Every live issue, scored 1–10 by Gemini the moment the book opens. GMP and subscription data come from the exchange scraper."
+        description="Every live issue, scored one to ten by Gemini when the book opens. GMP and subscription figures are pulled from the exchange feed."
         actions={
           <>
             <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
               <CalendarClock className="size-3 text-primary" />
-              Synced 15:18 IST
+              Last sync · 15:18 IST
             </span>
             <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
               <span className="relative flex size-1.5">
                 <span className="absolute inline-flex size-full animate-ping rounded-full bg-signal/70" />
                 <span className="relative inline-flex size-1.5 rounded-full bg-signal" />
               </span>
-              {stats.openNow} live now
+              {stats.openNow} issues open now
             </span>
           </>
         }
@@ -57,19 +57,19 @@ export default function IpoTracker() {
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {[
           {
-            label: "Open now",
+            label: "Open issues",
             value: String(stats.openNow),
-            note: "of 6 tracked issues",
+            note: "of six tracked issues",
             icon: Activity,
           },
           {
-            label: "Avg AI score",
+            label: "Average AI score",
             value: stats.avgScore.toFixed(1),
             note: "across the cycle",
             icon: Sparkles,
           },
           {
-            label: "Best GMP",
+            label: "Highest GMP",
             value: `+${stats.bestGmp.toFixed(1)}%`,
             note: "NexaGrid Energy",
             icon: TrendingUp,
@@ -77,7 +77,7 @@ export default function IpoTracker() {
           {
             label: "Peak subscription",
             value: `${stats.bestSub.toFixed(1)}x`,
-            note: "institutional + retail",
+            note: "institutional and retail",
             icon: CalendarClock,
           },
         ].map((stat) => {
@@ -109,7 +109,7 @@ export default function IpoTracker() {
           <div>
             <h2 className="text-sm font-semibold">Live issues</h2>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Sorted by AI score · tap Apply to review the underwriting note.
+              Ranked by AI score. Select Apply to review the underwriting note.
             </p>
           </div>
 
@@ -141,7 +141,7 @@ export default function IpoTracker() {
             AI score blends GMP stability, subscription quality, anchor book and
             valuation versus listed peers.
           </p>
-          <p className="num">Source: mock exchange feed</p>
+          <p className="num">Source: simulated exchange feed</p>
         </div>
       </section>
 
@@ -151,7 +151,7 @@ export default function IpoTracker() {
           <span className="grid size-6 place-items-center rounded-md border border-ai/25 bg-ai/10">
             <Sparkles className="size-3 text-ai" />
           </span>
-          <h2 className="text-sm font-semibold">How the AI score works</h2>
+          <h2 className="text-sm font-semibold">How the AI score is calculated</h2>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {[
@@ -168,7 +168,7 @@ export default function IpoTracker() {
             {
               step: "03",
               title: "Valuation gap",
-              body: "Issue multiple versus listed peers, then adjusted for float and sector momentum.",
+              body: "Issue multiple versus listed peers, adjusted for free float and sector momentum.",
             },
           ].map((item) => (
             <div
@@ -186,8 +186,8 @@ export default function IpoTracker() {
           ))}
         </div>
         <p className="mt-3 text-[9px] text-muted-foreground/60">
-          Scores are mock values for Phase 1. Gemini scoring and GitHub Actions
-          ingestion arrive in the backend phase.
+          Scores are simulated for Phase 1. Gemini scoring and the GitHub Actions
+          ingestion pipeline arrive with the backend.
         </p>
       </section>
     </div>

@@ -123,7 +123,8 @@ export function IpoApplyDialog({
                 size="sm"
                 onClick={() => {
                   toast.success(`Application drafted for ${ipo.company}`, {
-                    description: "Phase 1 mock — no order was sent to the exchange.",
+                    description:
+                      "Phase 1 simulation. No order was sent to the exchange.",
                   });
                   onOpenChange(false);
                 }}

@@ -3,6 +3,7 @@ import {
   Bell,
   ChevronRight,
   LayoutDashboard,
+  LineChart,
   LogOut,
   Menu,
   PieChart,
@@ -42,6 +43,13 @@ const navItems = [
     adminOnly: false,
   },
   {
+    to: "/catalog",
+    label: "Market Catalog",
+    icon: LineChart,
+    module: null,
+    adminOnly: false,
+  },
+  {
     to: "/ipo",
     label: "IPO Tracker",
     icon: Rocket,
@@ -73,6 +81,7 @@ const navItems = [
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
+  "/catalog": "Market Catalog",
   "/ipo": "IPO Tracker",
   "/portfolio": "My Portfolio",
   "/sip": "Smart SIP",
@@ -101,7 +110,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const handleSignOut = () => {
     logout();
     onNavigate?.();
-    toast.success("Signed out of AURUM");
+    toast.success("Signed out of StockPilot");
     navigate("/");
   };
 
@@ -221,10 +230,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-signal/70" />
               <span className="relative inline-flex size-1.5 rounded-full bg-signal" />
             </span>
-            Sentiment synced
+            Model synced
           </p>
           <p className="mt-1 text-[10px] text-muted-foreground">
-            12 min ago · 6 issues scored
+            12 minutes ago · 6 issues scored
           </p>
           <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/10">
             <div className="h-full w-[86%] rounded-full bg-gradient-to-r from-ai to-primary" />
@@ -335,7 +344,7 @@ function AccountMenu() {
 
   const handleSignOut = () => {
     logout();
-    toast.success("Signed out of AURUM");
+    toast.success("Signed out of StockPilot");
     navigate("/");
   };
 
@@ -408,7 +417,7 @@ export function AppShell() {
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-[10px] tracking-[0.16em] text-muted-foreground/60 uppercase">
-              <span className="hidden sm:inline">Aurum</span>
+              <span className="hidden sm:inline">StockPilot</span>
               <ChevronRight className="hidden size-3 sm:inline" />
               <span className="text-muted-foreground">{title}</span>
             </div>
@@ -429,7 +438,10 @@ export function AppShell() {
         </main>
 
         <footer className="mx-auto flex w-full max-w-[1440px] flex-col gap-1.5 border-t border-white/[0.05] px-4 py-5 text-[10px] text-muted-foreground/60 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <p>Phase 1 preview · Mock market data · Not investment advice.</p>
+          <p>
+            Phase 1 preview · Simulated market data · Internal use only · Not
+            investment advice.
+          </p>
           <p className="num">Scraper: idle · Gemini: active · v0.1.0</p>
         </footer>
       </div>
@@ -439,7 +451,7 @@ export function AppShell() {
           side="left"
           className="w-[284px] gap-0 border-white/[0.07] bg-background p-0 backdrop-blur-2xl sm:max-w-[284px]"
         >
-          <SheetTitle className="sr-only">AURUM navigation</SheetTitle>
+          <SheetTitle className="sr-only">StockPilot navigation</SheetTitle>
           <SheetDescription className="sr-only">
             Workspace and admin navigation
           </SheetDescription>

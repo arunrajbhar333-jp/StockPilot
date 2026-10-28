@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import {
   Check,
   KeyRound,
+  Layers,
   ShieldCheck,
   UserPlus,
   Users as UsersIcon,
@@ -152,7 +153,7 @@ export default function Admin() {
     toast.success(`${nextUser.name} added to the workspace`, {
       description: `Module access: ${selected
         .map((item) => moduleShortLabel[item])
-        .join(", ")}. Invite email is mocked in Phase 1.`,
+        .join(", ")}. Invitation email is simulated in Phase 1.`,
     });
     handleOpenChange(false);
   };
@@ -160,9 +161,9 @@ export default function Admin() {
   return (
     <div className="space-y-5 sm:space-y-6">
       <PageHeader
-        eyebrow="Administrator console"
+        eyebrow="Administration"
         title="Admin panel"
-        description="Approve who gets in, then decide which modules they see. Sidebar navigation and route guards follow these permissions."
+        description="Approve who gets into StockPilot, then decide which modules they can open. Permissions govern both the sidebar and the routes behind it."
         actions={
           <Button
             onClick={() => setOpen(true)}
@@ -180,7 +181,7 @@ export default function Admin() {
           {
             label: "Total users",
             value: String(stats.total),
-            note: "allowlisted accounts",
+            note: "approved accounts",
             icon: UsersIcon,
           },
           {
@@ -192,14 +193,14 @@ export default function Admin() {
           {
             label: "Active",
             value: String(stats.active),
-            note: "signed in this month",
+            note: "active this month",
             icon: KeyRound,
           },
           {
             label: "Module grants",
             value: String(stats.grants),
             note: "across all users",
-            icon: UserPlus,
+            icon: Layers,
           },
         ].map((stat) => {
           const Icon = stat.icon;
@@ -370,8 +371,9 @@ export default function Admin() {
         </div>
 
         <div className="border-t border-white/[0.06] px-4 py-3 text-[9px] text-muted-foreground/70 sm:px-5">
-          Phase 1 mock — new users live in local state only. Supabase auth,
-          password hashing and invite emails land with the backend.
+          Phase 1 preview. New users are held in local state only; Supabase
+          authentication, password hashing and invitation emails arrive with the
+          backend.
         </div>
       </section>
 
@@ -388,8 +390,8 @@ export default function Admin() {
               Role → workspace
             </p>
             <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-              Admins unlock the Admin Panel and every module. Standard users
-              only see what they are granted.
+              Administrators unlock the Admin Panel and every module. Standard
+              users only see what they have been granted.
             </p>
           </div>
           <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5">
@@ -397,7 +399,7 @@ export default function Admin() {
               Modules → routes
             </p>
             <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-              IPO, Portfolio and SIP each gate both the sidebar link and its
+              IPO, Portfolio and SIP each gate both the sidebar link and the
               route, so a hidden module cannot be opened by URL.
             </p>
           </div>
@@ -413,7 +415,8 @@ export default function Admin() {
                 Create user
               </DialogTitle>
               <DialogDescription className="mt-1 text-[11px] leading-relaxed">
-                Add a teammate to the allowlist and grant module access.
+                Add a teammate to the allowlist, then choose the modules they can
+                open.
               </DialogDescription>
             </DialogHeader>
 
@@ -456,7 +459,7 @@ export default function Admin() {
                     setEmail(event.target.value);
                     setErrors((current) => ({ ...current, email: undefined }));
                   }}
-                  placeholder="ananya@aurum.capital"
+                  placeholder="ananya@stockpilot.io"
                   autoComplete="off"
                   className="h-10 border-white/10 bg-black/30 text-[12px]"
                 />
@@ -544,8 +547,8 @@ export default function Admin() {
 
               <p className="flex items-start gap-1.5 rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2 text-[9px] leading-relaxed text-muted-foreground/70">
                 <ShieldCheck className="mt-0.5 size-3 shrink-0 text-primary" />
-                New accounts get the standard user role. Admin access is granted
-                separately and shows every module.
+                New accounts receive the standard user role. Administrator
+                access is granted separately and unlocks every module.
               </p>
             </div>
 

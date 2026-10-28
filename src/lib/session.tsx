@@ -13,7 +13,7 @@ import {
   type User,
 } from "@/data/mockData";
 
-const STORAGE_KEY = "aurum.session.userId";
+const STORAGE_KEY = "stockpilot.session.userId";
 
 type LoginResult = { ok: true } | { ok: false; error: string };
 

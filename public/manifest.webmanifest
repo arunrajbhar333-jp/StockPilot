@@ -1,7 +1,7 @@
 {
-  "name": "AURUM — AI Market Terminal",
-  "short_name": "AURUM",
-  "description": "AI-native terminal for Indian equities, live IPOs and smart SIPs.",
+  "name": "StockPilot — AI Equity & IPO Desk",
+  "short_name": "StockPilot",
+  "description": "Internal AI desk for Indian equities, live IPOs and systematic SIPs.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0b10",

@@ -35,8 +35,8 @@ export default function SmartSip() {
   return (
     <div className="space-y-5 sm:space-y-6">
       <PageHeader
-        eyebrow="Long-term compounding"
-        title="Smart SIP lab"
+        eyebrow="Systematic investing"
+        title="Smart SIP"
         description="Gemini screens the fund universe for cost, drawdown behaviour and rolling returns, then issues a start-or-wait verdict."
         actions={
           <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
@@ -72,7 +72,7 @@ export default function SmartSip() {
                   {fund.cagr}
                 </p>
                 <p className="mt-1.5 text-[10px] text-muted-foreground">
-                  5Y CAGR · 3Y {fund.threeYear}
+                  5-year CAGR · 3-year {fund.threeYear}
                 </p>
               </div>
               <Sparkline
@@ -93,7 +93,7 @@ export default function SmartSip() {
               </div>
               <div>
                 <p className="text-[9px] tracking-wide text-muted-foreground">
-                  Min SIP
+                  Minimum SIP
                 </p>
                 <p className="num mt-0.5 text-[11px] text-foreground">
                   ₹{fund.minSip.toLocaleString("en-IN")}
@@ -119,9 +119,9 @@ export default function SmartSip() {
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  toast.success(`${fund.fund} SIP draft created`, {
+                  toast.success(`SIP draft prepared for ${fund.fund}`, {
                     description:
-                      "Phase 1 mock — no mandate was registered with the AMC.",
+                      "Phase 1 simulation. No mandate was registered with the asset manager.",
                   })
                 }
                 className="h-8 flex-1 gap-1 rounded-lg border-primary/25 bg-primary/[0.08] text-[11px] font-medium text-primary hover:bg-primary/15 hover:text-primary sm:flex-none"
@@ -134,7 +134,7 @@ export default function SmartSip() {
                 variant="ghost"
                 onClick={() =>
                   toast("Backtest queued", {
-                    description: `Running 10-year rolling returns for ${fund.fund} (mock).`,
+                    description: `Running ten-year rolling returns for ${fund.fund} in simulation.`,
                   })
                 }
                 className="h-8 rounded-lg text-[11px] text-muted-foreground hover:text-foreground"
@@ -247,7 +247,7 @@ export default function SmartSip() {
               </div>
               <div>
                 <p className="text-[9px] text-muted-foreground">
-                  Est. wealth gained
+                  Estimated gains
                 </p>
                 <p className="num mt-0.5 text-[12px] text-signal">
                   +{formatInrCompact(projection.gain)}
@@ -281,8 +281,8 @@ export default function SmartSip() {
             </div>
 
             <p className="mt-3 border-t border-white/[0.08] pt-2.5 text-[9px] text-muted-foreground/60">
-              {formatInr(monthly)}/month for {years} years at{" "}
-              {blendCagr.toFixed(1)}% assumes returns are reinvested. Mutual fund
+              Assumes a constant {blendCagr.toFixed(1)}% CAGR on {formatInr(monthly)}
+              per month for {years} years, with returns reinvested. Mutual fund
               returns are not guaranteed.
             </p>
           </div>

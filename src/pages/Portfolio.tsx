@@ -104,11 +104,11 @@ export default function Portfolio() {
       <PageHeader
         eyebrow={`Holdings · ${portfolio.length} positions`}
         title="My portfolio"
-        description="Every position carries a live AI verdict with the one-line reasoning behind it. Verdicts refresh after each closing bell."
+        description="Each position carries a current AI verdict and the reasoning behind it. Verdicts refresh after the market closes."
         actions={
           <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
             <Sparkles className="size-3 text-ai" />
-            AI review · today, 15:24 IST
+            AI review · today at 15:24 IST
           </span>
         }
       />
@@ -116,7 +116,7 @@ export default function Portfolio() {
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <div className="glass lift rounded-2xl p-4">
           <p className="text-[9px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
-            Invested
+            Total invested
           </p>
           <p className="num mt-2.5 text-xl font-medium">
             ₹{money.format(totals.invested)}
@@ -159,7 +159,7 @@ export default function Portfolio() {
               {totals.pnl >= 0 ? "+" : "−"}
               {Math.abs(totals.pnlPct).toFixed(2)}%
             </span>{" "}
-            overall
+            on open positions
           </p>
         </div>
         <div className="glass lift rounded-2xl p-4">
@@ -171,7 +171,7 @@ export default function Portfolio() {
               {totals.verdicts.BUY}
               <span className="text-sm text-muted-foreground">/6</span>
             </p>
-            <span className="text-[10px] text-signal">buy rated</span>
+            <span className="text-[10px] text-signal">rated buy</span>
           </div>
           <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
             <span
@@ -206,13 +206,13 @@ export default function Portfolio() {
                 AI portfolio review
               </p>
               <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
-                Financials carry the strongest risk-reward this week.{" "}
-                {best.stock} is your best performer at{" "}
+                Financials offer the strongest risk-reward this week.{" "}
+                {best.stock} leads the book at{" "}
                 <span className="num text-signal">
                   +{best.pnlPct.toFixed(1)}%
                 </span>
-                , while Tata Motors stays the only SELL after JLR margin
-                guidance. Keep the HOLDs, stagger any new capital.
+                , while Tata Motors remains the only sell after JLR margin
+                guidance. Hold existing positions and stage any new capital.
               </p>
             </div>
           </div>
@@ -240,11 +240,11 @@ export default function Portfolio() {
           <div>
             <h2 className="text-sm font-semibold">Holdings</h2>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Long-term equity · average cost basis
+              Long-term equity at average cost basis
             </p>
           </div>
           <span className="num hidden text-[10px] text-muted-foreground sm:block">
-            P&amp;L excludes charges
+            P&amp;L excludes brokerage and taxes
           </span>
         </div>
 
@@ -385,8 +385,8 @@ export default function Portfolio() {
         </div>
 
         <div className="border-t border-white/[0.06] px-4 py-3 text-[9px] text-muted-foreground/70 sm:px-5">
-          AI verdicts are generated from price action, fundamentals and sector
-          momentum. Not investment advice.
+          AI verdicts combine price action, fundamentals and sector momentum.
+          Not investment advice.
         </div>
       </section>
     </div>

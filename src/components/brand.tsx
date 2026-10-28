@@ -31,20 +31,16 @@ export function BrandMark({ className }: { className?: string }) {
         stroke="rgba(255,255,255,0.12)"
       />
       <path
-        d="M14.5 34.5 L24 12.5 L33.5 34.5"
-        fill="none"
-        stroke={`url(#gold-${uid})`}
-        strokeWidth="2.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        d="M24 9.5 L34.5 32 L24 26.6 L13.5 32 Z"
+        fill={`url(#gold-${uid})`}
       />
       <path
-        d="M19.4 27.6 H28.6"
-        stroke={`url(#gold-${uid})`}
-        strokeWidth="2.4"
+        d="M17.5 37.5 H30.5"
+        stroke="#63E2A6"
+        strokeWidth="1.6"
         strokeLinecap="round"
+        opacity="0.85"
       />
-      <circle cx="35.5" cy="13.5" r="2.6" fill="#63E2A6" />
     </svg>
   );
 }
@@ -60,11 +56,11 @@ export function BrandLockup({
     <div className={cn("flex items-center gap-3", className)}>
       <BrandMark className={cn("size-10", markClassName)} />
       <div className="leading-none">
-        <p className="font-display text-[17px] font-semibold tracking-[0.22em] text-foreground">
-          AURUM
+        <p className="font-display text-[16px] font-semibold tracking-[0.16em] text-foreground">
+          STOCKPILOT
         </p>
-        <p className="mt-1.5 text-[9px] font-medium tracking-[0.28em] text-muted-foreground uppercase">
-          AI Market Terminal
+        <p className="mt-1.5 text-[8.5px] font-medium tracking-[0.22em] text-muted-foreground uppercase">
+          AI Equity &amp; IPO Desk
         </p>
       </div>
     </div>

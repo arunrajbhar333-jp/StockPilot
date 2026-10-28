@@ -41,18 +41,18 @@ function safeReturnTo(value: string | null): string {
 const features = [
   {
     icon: BrainCircuit,
-    title: "AI IPO scoring",
-    copy: "Gemini ranks every issue 1–10 before the book closes.",
+    title: "IPO underwriting",
+    copy: "Each issue is scored one to ten before the book closes.",
   },
   {
     icon: Target,
     title: "Portfolio verdicts",
-    copy: "Buy, hold or sell with a one-line rationale per stock.",
+    copy: "A buy, hold or sell call per holding, with the reasoning attached.",
   },
   {
     icon: TrendingUp,
-    title: "Smart SIP",
-    copy: "Fund shortlists tracked against a decade of cycles.",
+    title: "SIP research",
+    copy: "Fund shortlists tested across a decade of market cycles.",
   },
 ];
 
@@ -85,7 +85,7 @@ export default function Login() {
       setPending(false);
       return;
     }
-    toast.success("Welcome back to AURUM");
+    toast.success("Welcome back to StockPilot");
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -118,20 +118,21 @@ export default function Login() {
                 <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
               </span>
               <span className="text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
-                Private beta · Phase 1
+                Internal access · Phase 1
               </span>
             </span>
           </div>
 
           <h1 className="mt-5 font-display text-[34px] leading-[1.06] font-semibold tracking-tight sm:text-5xl lg:text-[56px]">
-            See the market
+            Every market signal.
             <br />
-            <span className="text-gold-gradient">before it moves.</span>
+            <span className="text-gold-gradient">One clear verdict.</span>
           </h1>
 
           <p className="mt-5 max-w-[30rem] text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
-            AURUM fuses live IPO tracking, portfolio verdicts and SIP
-            intelligence into one AI-native terminal built for Indian markets.
+            StockPilot is our internal research desk for Indian equities and
+            initial public offerings. Gemini scores every issue and holding, so
+            the team spends its time on decisions rather than data collection.
           </p>
 
           <div className="mt-8 hidden gap-3 lg:grid lg:grid-cols-3">
@@ -160,10 +161,10 @@ export default function Login() {
             <div className="flex items-center justify-between px-1 pb-2">
               <p className="eyebrow flex items-center gap-1.5 text-[8px] text-muted-foreground">
                 <Sparkles className="size-3 text-ai" />
-                Live desk snapshot
+                Desk snapshot
               </p>
               <p className="num text-[9px] text-muted-foreground/60">
-                28 Oct 2026 · 15:30 IST
+                As of 28 October 2026 · 15:30 IST
               </p>
             </div>
             <div className="grid grid-cols-3 gap-2">
@@ -203,7 +204,7 @@ export default function Login() {
                   />
                 </div>
                 <p className="mt-1.5 text-[9px] text-muted-foreground">
-                  Top IPO · {topIpo.company} · {topIpo.aiScore.toFixed(1)}
+                  Top issue · {topIpo.company} · {topIpo.aiScore.toFixed(1)}
                 </p>
               </div>
             </div>
@@ -212,8 +213,8 @@ export default function Login() {
           <div className="mt-7 hidden items-center gap-6 sm:flex">
             {[
               { value: "3,842", label: "issues scored" },
-              { value: "72%", label: "verdict hit-rate" },
-              { value: "12.4k", label: "portfolios tracked" },
+              { value: "72%", label: "verdict hit rate" },
+              { value: "1.4M", label: "data points daily" },
             ].map((stat) => (
               <div key={stat.label}>
                 <p className="num text-lg font-medium text-foreground">
@@ -234,11 +235,11 @@ export default function Login() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="font-display text-xl font-semibold tracking-tight sm:text-[22px]">
-                  Sign in to your terminal
+                  Sign in to StockPilot
                 </h2>
                 <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                  Access is limited to approved emails. Your permissions decide
-                  which modules load.
+                  This workspace is restricted to approved team members. Your
+                  role determines which modules load.
                 </p>
               </div>
               <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-primary/20 bg-primary/10">
@@ -261,7 +262,7 @@ export default function Login() {
                     name="email"
                     type="email"
                     autoComplete="email"
-                    placeholder="you@aurum.capital"
+                    placeholder="you@stockpilot.io"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     disabled={pending}
@@ -331,7 +332,7 @@ export default function Login() {
                   </>
                 ) : (
                   <>
-                    Enter terminal
+                    Enter workspace
                     <ArrowRight className="size-4" />
                   </>
                 )}
@@ -341,7 +342,7 @@ export default function Login() {
             <div className="my-6 flex items-center gap-3">
               <span className="h-px flex-1 bg-white/[0.07]" />
               <span className="text-[9px] font-medium tracking-[0.2em] text-muted-foreground/60 uppercase">
-                Demo access
+                Demo accounts
               </span>
               <span className="h-px flex-1 bg-white/[0.07]" />
             </div>
@@ -380,19 +381,19 @@ export default function Login() {
 
             <p className="mt-4 flex items-center gap-1.5 text-[10px] text-muted-foreground/70">
               <ShieldCheck className="size-3 text-signal" />
-              Allowlist enforced · Admin decides module access
+              Allowlist enforced · Module access is granted per user
             </p>
           </div>
 
           <p className="mt-4 text-center text-[10px] text-muted-foreground/50">
-            Phase 1 · Frontend UI with mock data · No backend calls
+            Phase 1 preview · Interface only · Simulated market data
           </p>
         </section>
       </div>
 
       <footer className="relative mx-auto flex w-full max-w-[1240px] flex-col gap-1 border-t border-white/[0.05] px-5 py-4 text-[10px] text-muted-foreground/50 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <p>© 2026 AURUM Capital Labs. Not investment advice.</p>
-        <p className="num">React · Supabase · Gemini · Telegram (planned)</p>
+        <p>© 2026 StockPilot · Internal use only · Not investment advice.</p>
+        <p className="num">React · Supabase · Gemini · Telegram integration planned</p>
       </footer>
     </main>
   );
