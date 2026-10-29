@@ -179,7 +179,7 @@
   --signal: #047857;
   --negative: #dc2626;
   --ai: #7c3aed;
-  --gold: #2563eb; /* neutral "gold" accents render as corporate blue */
+  --gold: #b45309; /* amber-700 — HOLD badges and neutral accents stay amber */
   --panel: #f3f4f6;
 
   --brand-mark-1: #93c5fd;
@@ -624,9 +624,10 @@
   border-color: #d1d5db;
 }
 
-/* Tables: headers text-gray-500, data (emails, timestamps) text-gray-700 */
+/* Tables: headers text-gray-500 font-medium, data (emails, timestamps) gray-700 */
 .light table th {
   color: #6b7280;
+  font-weight: 500;
 }
 
 .light table td .text-muted-foreground,
@@ -656,10 +657,249 @@
   color: #4b5563;
 }
 
-/* Active menu item: bg-blue-50 text-blue-600 (React Router NavLink) */
+/* Active menu item: bg-blue-50 text-blue-700 font-medium (React Router NavLink) */
 .light a[aria-current="page"] {
   background-color: #eff6ff;
   background-image: none;
-  color: #2563eb;
+  color: #1d4ed8;
   border-color: #dbeafe;
+  font-weight: 500;
+}
+
+/* --------------------------------------------------------------------------
+   Light-mode contrast pass 2.
+   Every rule below is scoped to `.light`, carries the exact color and border
+   values requested for the light theme, and is written outside @layer so it
+   wins over the dark-theme utilities. Dark mode is untouched.
+   ----------------------------------------------------------------------- */
+
+/* Body copy: the /50–/80 muted alphas wash out on white, so they render as
+   solid gray-500 (4.8:1) instead of a translucent gray. */
+.light .text-muted-foreground\/50,
+.light .text-muted-foreground\/60,
+.light .text-muted-foreground\/70,
+.light .text-muted-foreground\/80 {
+  color: #6b7280;
+}
+
+.light .placeholder\:text-muted-foreground\/50::placeholder,
+.light .placeholder\:text-muted-foreground\/60::placeholder,
+.light .placeholder\:text-muted-foreground\/70::placeholder {
+  color: #6b7280;
+}
+
+/* --------------------------------------------------------------------------
+   4. Tables — header row bg-gray-50 text-gray-500 font-medium,
+      row dividers border-gray-200, row hover bg-gray-50.
+   ----------------------------------------------------------------------- */
+.light thead tr,
+.light thead tr:hover {
+  background-color: #f9fafb;
+}
+
+.light table td .text-muted-foreground,
+.light table td .text-muted-foreground\/60,
+.light table td .text-muted-foreground\/70,
+.light table td .text-muted-foreground\/80 {
+  color: #374151;
+}
+
+/* Row / list hover: bg-gray-50. The heavier /0.06 hover is used by buttons and
+   cards, so it steps to gray-200 to stay a visible press state. */
+.light .hover\:bg-white\/5:hover,
+.light .hover\:bg-white\/\[0\.03\]:hover {
+  background-color: #f9fafb;
+}
+
+.light .hover\:bg-white\/\[0\.06\]:hover {
+  background-color: #e5e7eb;
+}
+
+/* --------------------------------------------------------------------------
+   3. Sidebar — bg-white border-r border-gray-200,
+      inactive text-gray-600 hover:bg-gray-100, active bg-blue-50 text-blue-700.
+   ----------------------------------------------------------------------- */
+.light aside a,
+.light [data-slot="sheet-content"] a {
+  color: #4b5563;
+}
+
+.light aside a:hover,
+.light [data-slot="sheet-content"] a:hover {
+  color: #111827;
+}
+
+.light aside a.hover\:bg-white\/\[0\.04\]:hover,
+.light [data-slot="sheet-content"] a.hover\:bg-white\/\[0\.04\]:hover {
+  background-color: #f3f4f6;
+}
+
+.light aside a[aria-current="page"],
+.light [data-slot="sheet-content"] a[aria-current="page"] {
+  background-color: #eff6ff;
+  background-image: none;
+  color: #1d4ed8;
+  border-color: #dbeafe;
+}
+
+.light aside .text-muted-foreground\/70,
+.light [data-slot="sheet-content"] .text-muted-foreground\/70 {
+  color: #6b7280;
+}
+
+/* --------------------------------------------------------------------------
+   5. Badges & verdicts — the exact light-mode palette.
+      SELL / STRONG SELL  bg-red-50    text-red-700    border-red-200
+      BUY  / STRONG BUY   bg-emerald-50 text-emerald-700 border-emerald-200
+      HOLD                 bg-amber-50  text-amber-700  border-amber-200
+   ----------------------------------------------------------------------- */
+.light .bg-signal\/10 {
+  background-color: #ecfdf5;
+}
+
+.light .bg-signal\/\[0\.16\] {
+  background-color: #ecfdf5;
+}
+
+.light .border-signal\/25 {
+  border-color: #a7f3d0;
+}
+
+.light .border-signal\/45 {
+  border-color: #a7f3d0;
+}
+
+.light .text-signal,
+.light .text-signal\/70 {
+  color: #047857;
+}
+
+.light .bg-gold\/10 {
+  background-color: #fffbeb;
+}
+
+.light .bg-gold\/\[0\.08\] {
+  background-color: #fffbeb;
+}
+
+.light .border-gold\/25 {
+  border-color: #fde68a;
+}
+
+.light .text-gold {
+  color: #b45309;
+}
+
+.light .bg-negative\/10 {
+  background-color: #fef2f2;
+}
+
+.light .bg-negative\/\[0\.16\] {
+  background-color: #fef2f2;
+}
+
+.light .border-negative\/25 {
+  border-color: #fecaca;
+}
+
+.light .border-negative\/45 {
+  border-color: #fecaca;
+}
+
+.light .text-negative,
+.light .text-negative\/70,
+.light .text-negative\/75 {
+  color: #b91c1c;
+}
+
+/* PLACEHOLDER chip: bg-gray-100 text-gray-600 border-gray-300. Matched on the
+   gold chip pair so the amber HOLD badge above is unaffected. */
+.light .border-gold\/30 {
+  border-color: #d1d5db;
+}
+
+.light .border-gold\/30.bg-gold\/10,
+.light .border-gold\/30.bg-gold\/\[0\.08\] {
+  background-color: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.light .border-gold\/30.text-gold,
+.light .border-gold\/30 .text-gold {
+  color: #4b5563;
+}
+
+/* --------------------------------------------------------------------------
+   6. Inputs & buttons.
+      Input: bg-white border-gray-300 text-gray-900 focus ring blue.
+      Primary: bg-blue-600 hover:bg-blue-700.  Cancel: white / gray-300 / gray-700.
+   ----------------------------------------------------------------------- */
+.light input[data-slot="input"],
+.light select[data-slot="input"],
+.light textarea[data-slot="input"] {
+  background-color: #ffffff;
+  border-color: #d1d5db;
+  color: #111827;
+}
+
+.light input[data-slot="input"]:focus-visible,
+.light select[data-slot="input"]:focus-visible,
+.light textarea[data-slot="input"]:focus-visible {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.35);
+}
+
+.light .hover\:bg-primary\/90:hover {
+  background-color: #1d4ed8;
+}
+
+.light button[data-variant="secondary"] {
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+.light button[data-variant="secondary"]:hover {
+  background-color: #f9fafb;
+  color: #111827;
+}
+
+/* Cancel buttons in dialog footers are ghost buttons in the dark theme. */
+.light [data-slot="dialog-footer"] button[data-variant="ghost"] {
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+
+.light [data-slot="dialog-footer"] button[data-variant="ghost"]:hover {
+  background-color: #f9fafb;
+  color: #111827;
+}
+
+/* --------------------------------------------------------------------------
+   7. AI market mood & desk briefing — white card with a subtle border,
+      gray-900 score text, tags bg-gray-100 text-gray-700.
+   ----------------------------------------------------------------------- */
+/* Tags/chips: gray-100 surface, gray-700 label (desk briefing tags, header
+   pills, module chips). The mood score itself is already text-foreground =
+   gray-900 through the --foreground token. */
+.light span.bg-white\/\[0\.03\].text-muted-foreground {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.light .bg-white\/\[0\.03\] {
+  background-color: #f3f4f6;
+}
+
+.light .bg-white\/\[0\.02\] {
+  background-color: #f9fafb;
+}
+
+.light .bg-white\/\[0\.04\],
+.light .bg-white\/\[0\.06\],
+.light .bg-white\/\[0\.07\],
+.light .bg-white\/\[0\.08\] {
+  background-color: #f3f4f6;
 }
