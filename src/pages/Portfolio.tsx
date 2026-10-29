@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, Plus, Sparkles } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  Plus,
+  Sparkles,
+  TriangleAlert,
+} from "lucide-react";
 import { AddStockDialog } from "@/components/add-stock-dialog";
 import { PageHeader } from "@/components/page-header";
 import { VerdictBadge, isSellVerdict } from "@/components/signals";
@@ -115,6 +121,10 @@ export default function Portfolio() {
     [positions],
   );
 
+  const placeholderCount = positions.filter(
+    (position) => position.aiSource === "placeholder",
+  ).length;
+
   return (
     <div className="space-y-5 sm:space-y-6">
       <PageHeader
@@ -138,6 +148,25 @@ export default function Portfolio() {
           </>
         }
       />
+
+      {placeholderCount > 0 ? (
+        <div
+          role="status"
+          className="flex items-start gap-2.5 rounded-xl border border-gold/30 bg-gold/[0.08] px-3.5 py-2.5"
+        >
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-gold" />
+          <p className="text-[11px] leading-relaxed text-foreground">
+            <span className="font-semibold">Placeholder analysis.</span>{" "}
+            {placeholderCount} of {positions.length} verdict
+            {placeholderCount === 1 ? " was" : "s were"} generated without
+            Gemini, so {placeholderCount === 1 ? "it is" : "they are"} not{" "}
+            {placeholderCount === 1 ? "a real AI call" : "real AI calls"}. Connect{" "}
+            <span className="font-mono text-[10px]">GEMINI_API_KEY</span> to the{" "}
+            <span className="font-mono text-[10px]">analyze-holding</span>{" "}
+            function to get live verdicts.
+          </p>
+        </div>
+      ) : null}
 
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <div className="glass lift rounded-2xl p-4">
@@ -237,13 +266,21 @@ export default function Portfolio() {
                 AI portfolio review
               </p>
               <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
-                Financials offer the strongest risk-reward this week.{" "}
-                {best.stock} leads the book at{" "}
-                <span className="num text-signal">
-                  +{best.pnlPct.toFixed(1)}%
+                {positions.length} position{positions.length === 1 ? "" : "s"}{" "}
+                reviewed: {totals.verdicts.BUY} rated buy, {totals.verdicts.HOLD}{" "}
+                hold and {totals.verdicts.SELL} sell. {best.stock} leads the book
+                at{" "}
+                <span
+                  className={cn(
+                    "num",
+                    best.pnlPct >= 0 ? "text-signal" : "text-negative",
+                  )}
+                >
+                  {best.pnlPct >= 0 ? "+" : "−"}
+                  {Math.abs(best.pnlPct).toFixed(1)}%
                 </span>
-                , while Tata Motors remains the only sell after JLR margin
-                guidance. Hold existing positions and stage any new capital.
+                . Verdicts weigh price action, fundamentals and sector momentum;
+                treat them as research input, not advice.
               </p>
             </div>
           </div>
@@ -364,6 +401,12 @@ export default function Portfolio() {
                   <TableCell className="max-w-[320px] pr-5">
                     <div className="flex flex-wrap items-start gap-2">
                       <VerdictBadge verdict={position.aiVerdict} />
+                      {position.aiSource === "placeholder" ? (
+                        <span className="inline-flex items-center gap-1 rounded border border-gold/30 bg-gold/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-gold uppercase">
+                          <TriangleAlert className="size-2.5" />
+                          Placeholder
+                        </span>
+                      ) : null}
                       <p className="text-[10px] leading-relaxed text-muted-foreground">
                         {position.reason}
                       </p>
@@ -441,6 +484,12 @@ export default function Portfolio() {
                 </div>
 
                 <p className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
+                  {position.aiSource === "placeholder" ? (
+                    <span className="mb-1 flex items-center gap-1 text-[9px] font-semibold tracking-wide text-gold uppercase">
+                      <TriangleAlert className="size-2.5" />
+                      Placeholder AI call
+                    </span>
+                  ) : null}
                   {position.reason}
                 </p>
               </div>

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { Navigate, Outlet, useLocation } from "react-router";
 import type { ModuleKey } from "@/types/domain";
@@ -6,8 +6,15 @@ import { useSession } from "@/lib/session";
 
 /** Sends signed-out visitors to the login screen, preserving the intended path. */
 export function RequireSession() {
-  const { user, isLoading } = useSession();
+  const { user, isLoading, logout } = useSession();
   const location = useLocation();
+  const suspended = user?.status === "suspended";
+
+  // A suspended profile keeps its JWT until expiry, so end the local session as
+  // soon as the profile reports the status. RLS already denies its data.
+  useEffect(() => {
+    if (suspended) void logout();
+  }, [suspended, logout]);
 
   if (isLoading) {
     return (
@@ -17,7 +24,7 @@ export function RequireSession() {
     );
   }
 
-  if (!user) {
+  if (!user || suspended) {
     const returnTo = `${location.pathname}${location.search}`;
     return <Navigate to={`/?returnTo=${encodeURIComponent(returnTo)}`} replace />;
   }

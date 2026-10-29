@@ -260,7 +260,7 @@ export const marketMood: MarketMood = {
   confidence: 86,
   updated: "12 minutes ago",
   headline:
-    "Momentum favours large-cap financials and capital goods as foreign institutional flows turn positive.",
+    "Momentum is broadening as foreign flows turn positive, though volatility stays low and positioning remains selective.",
   drivers: [
     { label: "FII net flows", value: "+₹2,410 Cr", direction: "up" },
     { label: "India VIX", value: "12.4 · −4.1%", direction: "down" },
@@ -273,7 +273,7 @@ export const deskNotes: DeskNote[] = [
   {
     id: 1,
     title: "Rotate, don't chase",
-    body: "Three of six holdings score above 75 on conviction; financials offer the strongest risk-reward.",
+    body: "Stagger fresh capital across a few tranches instead of committing at one price; conviction, not momentum, should size the position.",
     tag: "Portfolio",
   },
   {
@@ -300,8 +300,8 @@ export const notifications = [
   },
   {
     id: 2,
-    title: "Tata Motors moved to SELL",
-    body: "JLR margin guidance flagged as stretched by the AI review.",
+    title: "Holding moved to SELL",
+    body: "The AI review flagged stretched margins and a weakening trend in one open position.",
     time: "42 minutes ago",
     tone: "negative" as const,
   },

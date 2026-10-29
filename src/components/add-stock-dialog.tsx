@@ -112,9 +112,12 @@ export function AddStockDialog({
       },
       {
         onSuccess: ({ analysis }) => {
-          toast.success(`${trimmedStock} added · ${analysis.verdict}`, {
-            description: analysis.reasoning,
-          });
+          toast.success(
+            `${trimmedStock} added · ${analysis.verdict}${
+              analysis.source === "mock" ? " · placeholder" : ""
+            }`,
+            { description: analysis.reasoning },
+          );
           reset();
           onOpenChange(false);
         },

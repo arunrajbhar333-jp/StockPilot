@@ -175,7 +175,8 @@
   --sidebar-border: #e5e7eb;
   --sidebar-ring: rgb(37 99 235 / 40%);
 
-  --signal: #059669;
+  /* Emerald 700: 5.5:1 on white, so badge and P&L text pass AA. */
+  --signal: #047857;
   --negative: #dc2626;
   --ai: #7c3aed;
   --gold: #2563eb; /* neutral "gold" accents render as corporate blue */

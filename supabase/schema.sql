@@ -64,6 +64,7 @@ create table if not exists public.portfolio (
       'STRONG BUY', 'BUY', 'HOLD', 'SELL', 'STRONG SELL'
     )),
   ai_reasoning text,
+  ai_source text check (ai_source in ('gemini', 'placeholder')),
   confidence integer check (confidence between 0 and 100),
   purchase_date date,
   last_analyzed_at timestamptz,
@@ -144,6 +145,22 @@ from auth.users
 on conflict (id) do nothing;
 
 -- Security-definer helpers avoid recursive RLS lookups on profiles.
+-- Both treat a suspended profile as having no access at all.
+create or replace function public.is_active_member()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and coalesce(status, 'active') <> 'suspended'
+  );
+$$;
+
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -154,7 +171,9 @@ as $$
   select exists (
     select 1
     from public.profiles
-    where id = auth.uid() and role = 'admin'
+    where id = auth.uid()
+      and role = 'admin'
+      and coalesce(status, 'active') <> 'suspended'
   );
 $$;
 
@@ -167,12 +186,15 @@ set search_path = public
 as $$
   update public.profiles
   set last_active_at = now()
-  where id = auth.uid();
+  where id = auth.uid()
+    and coalesce(status, 'active') <> 'suspended';
 $$;
 
 revoke all on function public.is_admin() from public;
+revoke all on function public.is_active_member() from public;
 revoke all on function public.touch_last_active() from public;
 grant execute on function public.is_admin() to authenticated;
+grant execute on function public.is_active_member() to authenticated;
 grant execute on function public.touch_last_active() to authenticated;
 
 -- -----------------------------------------------------------------------------
@@ -184,83 +206,88 @@ alter table public.ipos enable row level security;
 alter table public.portfolio enable row level security;
 alter table public.sips enable row level security;
 
--- Profiles: read your own row; admins can read and update every profile.
+-- Profiles: read your own row so the app can detect a suspension; admins can
+-- read and update every profile, but only while their own profile is active.
+-- A suspended member sees nothing else in the database.
 drop policy if exists "profiles read own or admin" on public.profiles;
 create policy "profiles read own or admin"
   on public.profiles for select to authenticated
-  using (auth.uid() = id or public.is_admin());
+  using (
+    auth.uid() = id
+    or (public.is_active_member() and public.is_admin())
+  );
 
 drop policy if exists "profiles admin update" on public.profiles;
 create policy "profiles admin update"
   on public.profiles for update to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_active_member() and public.is_admin())
+  with check (public.is_active_member() and public.is_admin());
 
--- IPOs: every signed-in member can read; only admins can mutate.
+-- IPOs: every active member can read; only active admins can mutate.
 drop policy if exists "ipos read authenticated" on public.ipos;
 create policy "ipos read authenticated"
   on public.ipos for select to authenticated
-  using (true);
+  using (public.is_active_member());
 
 drop policy if exists "ipos admin insert" on public.ipos;
 create policy "ipos admin insert"
   on public.ipos for insert to authenticated
-  with check (public.is_admin());
+  with check (public.is_active_member() and public.is_admin());
 
 drop policy if exists "ipos admin update" on public.ipos;
 create policy "ipos admin update"
   on public.ipos for update to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_active_member() and public.is_admin())
+  with check (public.is_active_member() and public.is_admin());
 
 drop policy if exists "ipos admin delete" on public.ipos;
 create policy "ipos admin delete"
   on public.ipos for delete to authenticated
-  using (public.is_admin());
+  using (public.is_active_member() and public.is_admin());
 
--- Portfolio: strictly the signed-in owner. No cross-user reads, including admins.
+-- Portfolio: strictly the signed-in owner, and only while the profile is active.
 drop policy if exists "portfolio read own" on public.portfolio;
 create policy "portfolio read own"
   on public.portfolio for select to authenticated
-  using (auth.uid() = user_id);
+  using (public.is_active_member() and auth.uid() = user_id);
 
 drop policy if exists "portfolio insert own" on public.portfolio;
 create policy "portfolio insert own"
   on public.portfolio for insert to authenticated
-  with check (auth.uid() = user_id);
+  with check (public.is_active_member() and auth.uid() = user_id);
 
 drop policy if exists "portfolio update own" on public.portfolio;
 create policy "portfolio update own"
   on public.portfolio for update to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (public.is_active_member() and auth.uid() = user_id)
+  with check (public.is_active_member() and auth.uid() = user_id);
 
 drop policy if exists "portfolio delete own" on public.portfolio;
 create policy "portfolio delete own"
   on public.portfolio for delete to authenticated
-  using (auth.uid() = user_id);
+  using (public.is_active_member() and auth.uid() = user_id);
 
--- SIPs: read for every signed-in member; admin-managed writes.
+-- SIPs: read for every active member; active admins manage writes.
 drop policy if exists "sips read authenticated" on public.sips;
 create policy "sips read authenticated"
   on public.sips for select to authenticated
-  using (true);
+  using (public.is_active_member());
 
 drop policy if exists "sips admin insert" on public.sips;
 create policy "sips admin insert"
   on public.sips for insert to authenticated
-  with check (public.is_admin());
+  with check (public.is_active_member() and public.is_admin());
 
 drop policy if exists "sips admin update" on public.sips;
 create policy "sips admin update"
   on public.sips for update to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_active_member() and public.is_admin())
+  with check (public.is_active_member() and public.is_admin());
 
 drop policy if exists "sips admin delete" on public.sips;
 create policy "sips admin delete"
   on public.sips for delete to authenticated
-  using (public.is_admin());
+  using (public.is_active_member() and public.is_admin());
 
 -- -----------------------------------------------------------------------------
 -- 4. API privileges (RLS still applies)
@@ -400,23 +427,23 @@ alter table public.bots enable row level security;
 drop policy if exists "bots admin read" on public.bots;
 create policy "bots admin read"
   on public.bots for select to authenticated
-  using (public.is_admin());
+  using (public.is_active_member() and public.is_admin());
 
 drop policy if exists "bots admin insert" on public.bots;
 create policy "bots admin insert"
   on public.bots for insert to authenticated
-  with check (public.is_admin());
+  with check (public.is_active_member() and public.is_admin());
 
 drop policy if exists "bots admin update" on public.bots;
 create policy "bots admin update"
   on public.bots for update to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_active_member() and public.is_admin())
+  with check (public.is_active_member() and public.is_admin());
 
 drop policy if exists "bots admin delete" on public.bots;
 create policy "bots admin delete"
   on public.bots for delete to authenticated
-  using (public.is_admin());
+  using (public.is_active_member() and public.is_admin());
 
 grant select, insert, update, delete on public.bots to authenticated;
 
@@ -436,13 +463,13 @@ grant select, insert, update, delete on public.bots to authenticated;
 --    insert into public.portfolio (
 --      user_id, stock_name, symbol, sector, quantity,
 --      buy_price, current_price, purchase_date,
---      ai_verdict, ai_reasoning, confidence, last_analyzed_at
+--      ai_verdict, ai_reasoning, ai_source, confidence, last_analyzed_at
 --    )
 --    select id, 'Reliance Industries', 'RELIANCE', 'Energy', 40,
 --           2410.50, 2688.40, '2026-04-14',
 --           'HOLD',
 --           'Strong Jio and retail cash flows, but the current price already discounts the next two quarters.',
---           74, now()
+--           'gemini', 74, now()
 --    from public.profiles
 --    where email = 'you@company.com';
 -- =============================================================================

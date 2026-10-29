@@ -92,7 +92,7 @@ function placeholderAnalysis(symbol: string, note: string): Analysis {
   const verdict = VERDICTS[hash(symbol) % VERDICTS.length];
   return {
     verdict,
-    reasoning: `${PLACEHOLDER_REASONS[verdict]} ${note}`,
+    reasoning: `${note} ${PLACEHOLDER_REASONS[verdict]}`,
     confidence: 60,
     source: "mock",
   };
@@ -105,6 +105,11 @@ function buildPrompt(holding: HoldingRow): string {
   const invested = buyPrice * quantity;
   const pnlPct =
     invested > 0 ? ((currentPrice - buyPrice) / buyPrice) * 100 : 0;
+
+  // The row is marked at cost until a market feed updates current_price. Sending
+  // "0.00% P&L" would look like a flat, fully informed position, so say so.
+  const hasLivePrice =
+    currentPrice > 0 && Math.abs(currentPrice - buyPrice) > 0.005;
 
   const heldDays = holding.purchase_date
     ? Math.max(
@@ -120,8 +125,16 @@ function buildPrompt(holding: HoldingRow): string {
     `Sector: ${holding.sector ?? "not set"}`,
     `Quantity: ${quantity}`,
     `Average buy price: INR ${buyPrice.toFixed(2)}`,
-    `Last traded price used: INR ${currentPrice.toFixed(2)}`,
-    `Unrealised P&L: ${pnlPct.toFixed(2)}%`,
+    ...(hasLivePrice
+      ? [
+          `Last traded price: INR ${currentPrice.toFixed(2)}`,
+          `Unrealised P&L: ${pnlPct.toFixed(2)}%`,
+        ]
+      : [
+          "Live market price: unavailable. The stored price still equals the purchase price, so no meaningful P&L exists.",
+          "Do not compute, estimate or mention a P&L, and never claim a support or resistance break.",
+          "Open the reasoning by stating that live price data is unavailable, then judge the position on business quality, sector backdrop and valuation. If that evidence is not enough for a firm call, return HOLD.",
+        ]),
     heldDays === null ? "Holding period: unknown" : `Holding period: ${heldDays} days`,
     "",
     "Grade this position for an Indian retail investor. Use STRONG BUY or STRONG SELL only when the evidence is decisive; otherwise use BUY, HOLD or SELL.",
@@ -263,6 +276,19 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Your session is invalid. Sign in again." }, 401);
   }
 
+  const { data: callerProfile, error: callerProfileError } = await admin
+    .from("profiles")
+    .select("status")
+    .eq("id", caller.id)
+    .maybeSingle();
+
+  if (callerProfileError) {
+    return json({ error: "Could not verify your profile." }, 500);
+  }
+  if (callerProfile?.status === "suspended") {
+    return json({ error: "This account is suspended." }, 403);
+  }
+
   let body: { holdingId?: unknown };
 
   try {
@@ -303,7 +329,7 @@ Deno.serve(async (req: Request) => {
   if (!apiKey) {
     analysis = placeholderAnalysis(
       row.symbol ?? row.stock_name,
-      "Placeholder analysis — add GEMINI_API_KEY to enable live calls.",
+      "PLACEHOLDER — not a Gemini call: GEMINI_API_KEY is not set.",
     );
   } else {
     try {
@@ -312,7 +338,7 @@ Deno.serve(async (req: Request) => {
       console.error("[analyze-holding] Gemini call failed:", error);
       analysis = placeholderAnalysis(
         row.symbol ?? row.stock_name,
-        "Gemini was unreachable, so this is a placeholder call.",
+        "PLACEHOLDER — not a Gemini call: Gemini was unreachable.",
       );
     }
   }
@@ -323,6 +349,7 @@ Deno.serve(async (req: Request) => {
     .update({
       ai_verdict: analysis.verdict,
       ai_reasoning: analysis.reasoning,
+      ai_source: analysis.source === "gemini" ? "gemini" : "placeholder",
       confidence: analysis.confidence,
       last_analyzed_at: analyzedAt,
     })

@@ -61,7 +61,7 @@ const MOCK_ANALYSES: HoldingAnalysis[] = [
 ];
 
 const MOCK_NOTE =
-  "Placeholder analysis — connect GEMINI_API_KEY for live calls.";
+  "PLACEHOLDER — not a Gemini call: the analyzer is unreachable or no API key is connected.";
 
 /** Stable pseudo-analysis so the same symbol keeps the same placeholder call. */
 function localFallback(symbol: string): HoldingAnalysis {
@@ -70,7 +70,7 @@ function localFallback(symbol: string): HoldingAnalysis {
     hash = (hash * 31 + character.charCodeAt(0)) % 997;
   }
   const picked = MOCK_ANALYSES[hash % MOCK_ANALYSES.length];
-  return { ...picked, reasoning: `${picked.reasoning} ${MOCK_NOTE}` };
+  return { ...picked, reasoning: `${MOCK_NOTE} ${picked.reasoning}` };
 }
 
 interface AnalyzePayload {
@@ -119,6 +119,7 @@ async function runAnalysis(
     .update({
       ai_verdict: fallback.verdict,
       ai_reasoning: fallback.reasoning,
+      ai_source: "placeholder",
       last_analyzed_at: new Date().toISOString(),
       confidence: 60,
     })
@@ -156,6 +157,7 @@ export function useAddHolding() {
           purchase_date: input.purchaseDate,
           ai_verdict: "HOLD",
           ai_reasoning: "AI analysis is running for this position.",
+          ai_source: null,
           last_analyzed_at: null,
         })
         .select("id")

@@ -8,6 +8,8 @@ export type HoldingVerdict =
   | "HOLD"
   | "SELL"
   | "STRONG SELL";
+/** Where the stored verdict came from; "unknown" covers pre-marker rows. */
+export type AiSource = "gemini" | "placeholder" | "unknown";
 export type SipVerdict = "START" | "WAIT";
 export type IpoType = "SME" | "Mainboard";
 export type IpoStatus = "Open" | "Closing today" | "Upcoming";
@@ -66,6 +68,7 @@ export interface Holding {
   avgPrice: number;
   ltp: number;
   aiVerdict: HoldingVerdict;
+  aiSource: AiSource;
   confidence: number;
   reason: string;
   /** ISO date (YYYY-MM-DD) the position was bought, when recorded. */

@@ -65,12 +65,15 @@ Deno.serve(async (req: Request) => {
 
   const { data: callerProfile, error: callerProfileError } = await admin
     .from("profiles")
-    .select("role")
+    .select("role, status")
     .eq("id", caller.id)
     .maybeSingle();
 
   if (callerProfileError) {
     return json({ error: "Could not verify your administrator profile." }, 500);
+  }
+  if (callerProfile?.status === "suspended") {
+    return json({ error: "This account is suspended." }, 403);
   }
   if (callerProfile?.role !== "admin") {
     return json({ error: "Only administrators can remove users." }, 403);

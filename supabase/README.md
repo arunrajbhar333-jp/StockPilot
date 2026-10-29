@@ -38,11 +38,19 @@ the new table, policies and grants.
 
 ### Upgrading an existing database (Phase 3)
 
-Run [`migrations/20261029120000_portfolio_ai_review.sql`](./migrations/20261029120000_portfolio_ai_review.sql)
-in the SQL editor (or with `supabase db push`). It widens `ai_verdict` to the
-five calls, renames `reasoning` to `ai_reasoning`, and adds `purchase_date` and
-`last_analyzed_at`. Fresh projects that run the current `schema.sql` do not need
-it.
+Run the migrations in [`migrations/`](./migrations) in filename order, in the
+SQL editor or with `supabase db push`.
+
+- `20261029120000_portfolio_ai_review.sql` widens `ai_verdict` to the five calls,
+  renames `reasoning` to `ai_reasoning`, and adds `purchase_date` and
+  `last_analyzed_at`.
+- `20261029160000_suspended_access_and_ai_source.sql` adds `portfolio.ai_source`
+  (`gemini` / `placeholder`) and rebuilds every policy so a `suspended` profile
+  is denied on all tables. `is_admin()` also returns false for suspended admins.
+  The only row a suspended account can still read is its own profile, which is
+  how the app detects the suspension and signs it out.
+
+Fresh projects that run the current `schema.sql` already include both.
 
 ## 3. Create the first administrator
 
@@ -67,7 +75,8 @@ once the functions below are deployed. The trigger assigns them the standard
 
 Creating, updating or deleting an Auth user requires the service role key,
 which cannot live in the browser. The three `admin-*` functions check the
-caller's `profiles.role` before calling the Supabase admin API.
+caller's `profiles.role` and reject a `suspended` profile before calling the
+Supabase admin API.
 `admin-delete-user` blocks self-deletion, and `admin-update-user` blocks
 demoting your own account. `analyze-holding` takes no admin rights: it only
 grades the caller's own position.
@@ -99,13 +108,13 @@ account before running:
 insert into public.portfolio (
   user_id, stock_name, symbol, sector, quantity,
   buy_price, current_price, purchase_date,
-  ai_verdict, ai_reasoning, confidence, last_analyzed_at
+  ai_verdict, ai_reasoning, ai_source, confidence, last_analyzed_at
 )
 select id, 'Reliance Industries', 'RELIANCE', 'Energy', 40,
        2410.50, 2688.40, '2026-04-14',
        'HOLD',
        'Strong Jio and retail cash flows, but the current price already discounts the next two quarters.',
-       74, now()
+       'gemini', 74, now()
 from public.profiles
 where email = 'you@company.com';
 ```
@@ -116,10 +125,19 @@ where email = 'you@company.com';
   `ipos` and `portfolio` also subscribe to Postgres changes, so edits appear
   without a refresh.
 - Adding a holding writes the row, then invokes `analyze-holding`, which grades
-  it with Gemini and saves `ai_verdict`, `ai_reasoning`, `confidence` and
-  `last_analyzed_at`. The verdict columns are advisory, not investment advice.
-  Positions are marked at cost until a live price feed updates
-  `current_price`, and the UI tints SELL / STRONG SELL rows red.
+  it with Gemini and saves `ai_verdict`, `ai_reasoning`, `ai_source`,
+  `confidence` and `last_analyzed_at`. The verdict columns are advisory, not
+  investment advice, and the UI tints SELL / STRONG SELL rows red.
+- Positions are marked at cost until a live price feed updates `current_price`.
+  While `current_price` equals `buy_price`, the prompt tells Gemini that live
+  price data is unavailable, omits the P&L, and asks it to say so instead of
+  pretending the position is flat. Verdicts produced without a Gemini call are
+  tagged `ai_source = 'placeholder'` and the Portfolio shows a warning banner
+  plus a per-row Placeholder chip.
+- Suspended profiles are denied at the database layer: every policy calls
+  `public.is_active_member()`, and the admin Edge Functions reject suspended
+  callers. Change `profiles.status` to `suspended` to revoke access; the open
+  session is signed out on the next profile load.
 - The Admin Panel's **Bot management** tab writes to `bots` and masks tokens in
   the UI. The Hinglish message builders live in
   `src/lib/notification-templates.ts`; they are formatting helpers until the

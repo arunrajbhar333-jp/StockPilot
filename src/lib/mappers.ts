@@ -56,6 +56,7 @@ export interface PortfolioRow {
   current_price: number | string | null;
   ai_verdict: string | null;
   ai_reasoning: string | null;
+  ai_source: string | null;
   confidence: number | string | null;
   purchase_date: string | null;
   last_analyzed_at: string | null;
@@ -222,6 +223,10 @@ export function mapPortfolioRow(row: PortfolioRow): Holding {
     avgPrice: toNumber(row.buy_price),
     ltp: toNumber(row.current_price),
     aiVerdict: parseHoldingVerdict(row.ai_verdict),
+    aiSource:
+      row.ai_source === "gemini" || row.ai_source === "placeholder"
+        ? row.ai_source
+        : "unknown",
     confidence: toNumber(row.confidence),
     reason: row.ai_reasoning ?? "",
     purchaseDate: row.purchase_date,
