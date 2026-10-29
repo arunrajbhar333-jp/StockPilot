@@ -7,16 +7,25 @@ import {
 } from "@/lib/supabase";
 import {
   mapIpoRow,
+  mapMarketIndexRow,
   mapPortfolioRow,
   mapSipRow,
   type IpoRow,
+  type MarketIndexRow,
   type PortfolioRow,
   type SipRow,
 } from "@/lib/mappers";
-import type { Holding, Ipo, SipFund } from "@/types/domain";
+import type { Holding, Ipo, MarketIndex, SipFund } from "@/types/domain";
 
 const IPO_KEY = ["ipos"] as const;
 const SIPS_KEY = ["sips"] as const;
+const MARKET_INDICES_KEY = ["market_indices"] as const;
+
+/** Rows written by scraper/scraper.py, in the order the dashboard shows them. */
+const MARKET_INDEX_IDS = ["nifty50", "sensex", "banknifty"];
+const MARKET_INDEX_ORDER = new Map(
+  MARKET_INDEX_IDS.map((id, index) => [id, index]),
+);
 
 export function useIpos() {
   const queryClient = useQueryClient();
@@ -114,6 +123,40 @@ export function usePortfolio(userId: string | null) {
     isLoading: query.isLoading,
     error: query.error,
     refetch: query.refetch,
+  };
+}
+
+export function useMarketIndices() {
+  const query = useQuery({
+    queryKey: MARKET_INDICES_KEY,
+    enabled: isSupabaseConfigured,
+    queryFn: async (): Promise<MarketIndex[]> => {
+      if (!supabase) throw new Error(SUPABASE_SETUP_MESSAGE);
+      const { data, error } = await supabase
+        .from("market_indices")
+        .select("*")
+        .in("id", MARKET_INDEX_IDS);
+
+      if (error) throw new Error(error.message);
+      return ((data ?? []) as MarketIndexRow[])
+        .map(mapMarketIndexRow)
+        .sort(
+          (a, b) =>
+            (MARKET_INDEX_ORDER.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+            (MARKET_INDEX_ORDER.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+        );
+    },
+    // The scraper refreshes the snapshot every 15 minutes; poll gently so a
+    // dashboard left open picks up the latest sync without a reload.
+    refetchInterval: 5 * 60_000,
+  });
+
+  return {
+    indices: query.data ?? [],
+    isLoading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+    configured: isSupabaseConfigured,
   };
 }
 

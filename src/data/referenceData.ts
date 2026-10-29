@@ -1,9 +1,9 @@
 /**
  * Static reference content.
  *
- * Authentication, IPOs, portfolios and SIPs now come from Supabase. Market
- * indices, sentiment, the catalogue and desk alerts remain local reference
- * data until the scraper and sentiment jobs are connected.
+ * Authentication, IPOs, portfolios, SIPs and index snapshots now come from
+ * Supabase. The signed-out spotlight index values, sentiment, the catalogue and
+ * desk alerts remain local reference data until the sentiment job is connected.
  */
 import type {
   DeskNote,

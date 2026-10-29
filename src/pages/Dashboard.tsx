@@ -14,8 +14,8 @@ import { Sparkline } from "@/components/sparkline";
 import { ChangePill, VerdictBadge } from "@/components/signals";
 import { IpoTable } from "@/components/ipo-table";
 import { Button } from "@/components/ui/button";
-import { deskNotes, indices, marketMood } from "@/data/referenceData";
-import { useIpos, useSips } from "@/hooks/use-market-data";
+import { deskNotes, marketMood } from "@/data/referenceData";
+import { useIpos, useMarketIndices, useSips } from "@/hooks/use-market-data";
 import { useSession } from "@/lib/session";
 import type { MarketIndex, MarketMood } from "@/types/domain";
 import { cn } from "@/lib/utils";
@@ -76,6 +76,31 @@ function IndexCard({ index }: { index: MarketIndex }) {
             {index.dayHigh.toLocaleString("en-IN")}
           </span>
         </span>
+      </div>
+    </div>
+  );
+}
+
+function IndexCardSkeleton() {
+  return (
+    <div className="glass rounded-2xl p-4 sm:p-5" aria-hidden="true">
+      <div className="flex items-start justify-between gap-2">
+        <div className="space-y-2">
+          <div className="h-2.5 w-16 animate-pulse rounded bg-muted" />
+          <div className="h-2 w-28 animate-pulse rounded bg-muted/70" />
+        </div>
+        <div className="h-5 w-16 animate-pulse rounded-full bg-muted" />
+      </div>
+      <div className="mt-4 flex items-end justify-between gap-2">
+        <div className="space-y-2">
+          <div className="h-6 w-28 animate-pulse rounded bg-muted" />
+          <div className="h-2.5 w-20 animate-pulse rounded bg-muted/70" />
+        </div>
+        <div className="h-9 w-20 animate-pulse rounded bg-muted/70 sm:h-10 sm:w-24" />
+      </div>
+      <div className="mt-3.5 flex items-center justify-between border-t border-border pt-2.5">
+        <div className="h-2 w-16 animate-pulse rounded bg-muted/70" />
+        <div className="h-2 w-16 animate-pulse rounded bg-muted/70" />
       </div>
     </div>
   );
@@ -155,6 +180,13 @@ export default function Dashboard() {
     error: sipsError,
     refetch: refetchSips,
   } = useSips();
+  const {
+    indices,
+    isLoading: indicesLoading,
+    error: indicesError,
+    refetch: refetchIndices,
+    configured: indicesConfigured,
+  } = useMarketIndices();
   const firstName = user?.name.split(" ")[0] ?? "Investor";
 
   const hour = new Date().getHours();
@@ -176,7 +208,7 @@ export default function Dashboard() {
           <>
             <span className="hidden items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground sm:inline-flex">
               <span className="size-1.5 rounded-full bg-primary" />
-              Market feed · Simulated
+              Market feed · 15-min sync
             </span>
             <span className="hidden items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground lg:inline-flex">
               <Sparkles className="size-3 text-ai" />
@@ -198,9 +230,51 @@ export default function Dashboard() {
       />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {indices.map((index) => (
-          <IndexCard key={index.id} index={index} />
-        ))}
+        {indicesLoading ? (
+          Array.from({ length: 3 }, (_, index) => (
+            <IndexCardSkeleton key={index} />
+          ))
+        ) : indicesError ? (
+          <div className="glass rounded-2xl px-5 py-8 text-center sm:col-span-2 xl:col-span-3">
+            <p className="text-[12px] font-medium text-foreground">
+              Live index feed unavailable
+            </p>
+            <p className="mx-auto mt-1 max-w-md text-[11px] leading-relaxed text-muted-foreground">
+              {indicesError.message}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void refetchIndices()}
+              className="mt-3 h-7 text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              Retry
+            </Button>
+          </div>
+        ) : indices.length === 0 ? (
+          <div className="glass rounded-2xl px-5 py-8 text-center sm:col-span-2 xl:col-span-3">
+            <p className="text-[12px] font-medium text-foreground">
+              Index snapshot pending
+            </p>
+            <p className="mx-auto mt-1 max-w-md text-[11px] leading-relaxed text-muted-foreground">
+              {indicesConfigured
+                ? "The market sync writes NIFTY 50, SENSEX and BANK NIFTY every 15 minutes. Run it once from GitHub Actions, or check back after the next cycle."
+                : "Supabase is not configured, so live index data cannot load."}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void refetchIndices()}
+              className="mt-3 h-7 text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              Refresh
+            </Button>
+          </div>
+        ) : (
+          indices.map((index) => (
+            <IndexCard key={index.id} index={index} />
+          ))
+        )}
       </section>
 
       <section className="grid gap-4 xl:grid-cols-3">

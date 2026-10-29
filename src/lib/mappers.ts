@@ -5,6 +5,7 @@ import {
   type Ipo,
   type IpoStatus,
   type IpoVerdict,
+  type MarketIndex,
   type ModuleKey,
   type SipFund,
   type SipRisk,
@@ -231,6 +232,44 @@ export function mapPortfolioRow(row: PortfolioRow): Holding {
     reason: row.ai_reasoning ?? "",
     purchaseDate: row.purchase_date,
     lastAnalyzedAt: row.last_analyzed_at,
+  };
+}
+
+export interface MarketIndexRow {
+  id: string;
+  symbol: string;
+  name: string;
+  value: number | string | null;
+  change: number | string | null;
+  change_pct: number | string | null;
+  day_low: number | string | null;
+  day_high: number | string | null;
+  spark: unknown;
+  updated_at: string | null;
+}
+
+export function mapMarketIndexRow(row: MarketIndexRow): MarketIndex {
+  const value = toNumber(row.value);
+  const spark = Array.isArray(row.spark)
+    ? row.spark.map((point) => toNumber(point as number | string))
+    : [];
+
+  return {
+    id: row.id,
+    symbol: row.symbol,
+    name: row.name,
+    value,
+    change: toNumber(row.change),
+    changePct: toNumber(row.change_pct),
+    dayLow:
+      row.day_low === null || row.day_low === undefined
+        ? value
+        : toNumber(row.day_low),
+    dayHigh:
+      row.day_high === null || row.day_high === undefined
+        ? value
+        : toNumber(row.day_high),
+    spark: spark.length > 1 ? spark : [value, value],
   };
 }
 
