@@ -223,6 +223,10 @@ async function analyzeWithGemini(
 
   if (!response.ok) {
     const detail = await response.text();
+    // 400 = bad request/schema, 403 = key rejected, 429 = quota, 404 = model.
+    console.error(
+      `[analyze-holding] Gemini HTTP ${response.status} for model "${model}": ${detail.slice(0, 500)}`,
+    );
     throw new Error(`Gemini returned ${response.status}: ${detail.slice(0, 300)}`);
   }
 
@@ -233,10 +237,18 @@ async function analyzeWithGemini(
     ?.map((part) => part.text ?? "")
     .join("");
 
-  if (!text) throw new Error("Gemini returned an empty response.");
+  if (!text) {
+    console.error(
+      `[analyze-holding] Gemini returned no text for model "${model}": ${JSON.stringify(payload).slice(0, 500)}`,
+    );
+    throw new Error("Gemini returned an empty response.");
+  }
 
   const parsed = parseGeminiJson(text);
   if (!parsed || !isVerdict(parsed.verdict)) {
+    console.error(
+      `[analyze-holding] unusable Gemini output for model "${model}": ${text.slice(0, 500)}`,
+    );
     throw new Error("Gemini did not return a usable verdict.");
   }
 
@@ -351,6 +363,9 @@ Deno.serve(async (req: Request) => {
 
   let analysis: Analysis;
   if (!apiKey) {
+    console.error(
+      `[analyze-holding] GEMINI_API_KEY is not set — storing a placeholder verdict for holding ${row.id}.`,
+    );
     if (systemCaller) {
       return json({
         skipped: true,
@@ -362,10 +377,17 @@ Deno.serve(async (req: Request) => {
       "PLACEHOLDER — not a Gemini call: GEMINI_API_KEY is not set.",
     );
   } else {
+    console.log(
+      `[analyze-holding] calling Gemini model "${model}" for ${row.symbol ?? row.stock_name} (key present, system caller: ${systemCaller})`,
+    );
     try {
       analysis = await analyzeWithGemini(row, apiKey, model);
+      console.log(
+        `[analyze-holding] Gemini verdict for ${row.symbol ?? row.stock_name}: ${analysis.verdict}`,
+      );
     } catch (error) {
-      console.error("[analyze-holding] Gemini call failed:", error);
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error("[analyze-holding] Gemini call failed:", detail);
       if (systemCaller) {
         // Never replace a real verdict with a placeholder during a bulk sync.
         return json(
@@ -373,9 +395,11 @@ Deno.serve(async (req: Request) => {
           502,
         );
       }
+      // Store the real reason so the UI shows the HTTP status instead of a
+      // generic "key missing" message. Full details are in the logs above.
       analysis = placeholderAnalysis(
         row.symbol ?? row.stock_name,
-        "PLACEHOLDER — not a Gemini call: Gemini was unreachable.",
+        `PLACEHOLDER — not a Gemini call: ${detail.slice(0, 240)}`,
       );
     }
   }

@@ -16,7 +16,7 @@ import {
   type SipRow,
 } from "@/lib/mappers";
 import { formatRelativeTime } from "@/lib/format";
-import { readFunctionError } from "@/hooks/use-profiles";
+import { readFunctionError } from "@/lib/function-error";
 import type {
   DeskBriefingItem,
   Holding,

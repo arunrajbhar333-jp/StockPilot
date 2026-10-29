@@ -4,12 +4,22 @@ import {
   ArrowUpRight,
   Plus,
   Sparkles,
+  Trash2,
   TriangleAlert,
 } from "lucide-react";
+import { toast } from "sonner";
 import { AddStockDialog } from "@/components/add-stock-dialog";
 import { PageHeader } from "@/components/page-header";
 import { VerdictBadge, isSellVerdict } from "@/components/signals";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -19,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { usePortfolio } from "@/hooks/use-market-data";
+import { useDeleteHolding } from "@/hooks/use-portfolio-actions";
 import { initials } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import type { Holding } from "@/types/domain";
@@ -83,6 +94,28 @@ function PnlText({
   );
 }
 
+function DeleteHoldingButton({
+  stock,
+  onClick,
+}: {
+  stock: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      onClick={onClick}
+      aria-label={`Delete ${stock}`}
+      title={`Delete ${stock}`}
+      className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-negative/15 hover:text-negative"
+    >
+      <Trash2 className="size-3.5" />
+    </Button>
+  );
+}
+
 export default function Portfolio() {
   const { user } = useSession();
   const {
@@ -92,6 +125,8 @@ export default function Portfolio() {
     refetch,
   } = usePortfolio(user?.id ?? null);
   const [addOpen, setAddOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Position | null>(null);
+  const deleteHolding = useDeleteHolding();
   const positions = useMemo(() => buildPositions(holdings), [holdings]);
 
   const totals = useMemo(() => {
@@ -401,6 +436,10 @@ export default function Portfolio() {
                   <TableCell className="max-w-[320px] pr-5">
                     <div className="flex flex-wrap items-start gap-2">
                       <VerdictBadge verdict={position.aiVerdict} />
+                      <DeleteHoldingButton
+                        stock={position.stock}
+                        onClick={() => setPendingDelete(position)}
+                      />
                       {position.aiSource === "placeholder" ? (
                         <span className="inline-flex items-center gap-1 rounded border border-gold/30 bg-gold/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-gold uppercase">
                           <TriangleAlert className="size-2.5" />
@@ -445,7 +484,13 @@ export default function Portfolio() {
                       </p>
                     </div>
                   </div>
-                  <VerdictBadge verdict={position.aiVerdict} />
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <VerdictBadge verdict={position.aiVerdict} />
+                    <DeleteHoldingButton
+                      stock={position.stock}
+                      onClick={() => setPendingDelete(position)}
+                    />
+                  </div>
                 </div>
 
                 <div className="mt-3 flex items-end justify-between gap-3">
@@ -506,6 +551,100 @@ export default function Portfolio() {
       </section>
 
       <AddStockDialog open={addOpen} onOpenChange={setAddOpen} />
+
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteHolding.isPending) {
+            setPendingDelete(null);
+            deleteHolding.reset();
+          }
+        }}
+      >
+        <DialogContent className="glass-deep gap-0 overflow-hidden border-white/10 p-0 sm:max-w-md">
+          <DialogHeader className="border-b border-white/[0.07] px-5 py-4 text-left">
+            <DialogTitle className="flex items-center gap-2 font-display text-base">
+              <Trash2 className="size-4 text-negative" />
+              Delete {pendingDelete?.stock ?? "holding"}?
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-[11px] leading-relaxed">
+              {pendingDelete
+                ? `${pendingDelete.quantity} share${
+                    pendingDelete.quantity === 1 ? "" : "s"
+                  } at ₹${pendingDelete.avgPrice.toLocaleString(
+                    "en-IN",
+                  )}, its stored AI verdict and the reasoning will be removed from your portfolio in Supabase. This cannot be undone.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 px-5 py-4">
+            {pendingDelete ? (
+              <div className="rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5">
+                <p className="text-[9px] tracking-wide text-muted-foreground uppercase">
+                  Being removed
+                </p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <VerdictBadge verdict={pendingDelete.aiVerdict} />
+                  <p className="text-[12px] text-foreground">
+                    {pendingDelete.stock}
+                  </p>
+                  <p className="num ml-auto text-[11px] text-muted-foreground">
+                    {pendingDelete.symbol}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {deleteHolding.isError ? (
+              <p className="rounded-lg border border-negative/25 bg-negative/10 px-3 py-2 text-[10px] leading-relaxed text-negative">
+                {deleteHolding.error.message}
+              </p>
+            ) : null}
+          </div>
+
+          <DialogFooter className="border-t border-white/[0.07] px-5 py-3.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={deleteHolding.isPending}
+              onClick={() => {
+                setPendingDelete(null);
+                deleteHolding.reset();
+              }}
+              className="text-muted-foreground"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={deleteHolding.isPending || !user}
+              onClick={() => {
+                if (!pendingDelete || !user) return;
+                const stock = pendingDelete.stock;
+                deleteHolding.mutate(
+                  { holdingId: pendingDelete.id, userId: user.id },
+                  {
+                    onSuccess: () => {
+                      toast.success(`${stock} removed from your portfolio`, {
+                        description:
+                          "The row and its AI verdict were deleted from Supabase.",
+                      });
+                      setPendingDelete(null);
+                      deleteHolding.reset();
+                    },
+                  },
+                );
+              }}
+              className="bg-negative text-white hover:bg-negative/90"
+            >
+              {deleteHolding.isPending ? "Deleting…" : "Delete stock"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

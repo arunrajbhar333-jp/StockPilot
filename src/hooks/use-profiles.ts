@@ -5,33 +5,10 @@ import {
   supabase,
 } from "@/lib/supabase";
 import { mapProfileRow, type ProfileRow } from "@/lib/mappers";
+import { readFunctionError } from "@/lib/function-error";
 import type { ModuleKey, UserRole, WorkspaceUser } from "@/types/domain";
 
 const PROFILES_KEY = ["profiles"] as const;
-
-export async function readFunctionError(
-  error: unknown,
-  functionName: string,
-): Promise<string> {
-  if (error && typeof error === "object" && "context" in error) {
-    const context = (error as { context?: unknown }).context;
-    if (context instanceof Response) {
-      try {
-        const body = (await context.json()) as { error?: string };
-        if (body?.error) return body.error;
-      } catch {
-        /* fall through to the generic message */
-      }
-    }
-  }
-  if (error instanceof Error && error.message) {
-    if (error.message.toLowerCase().includes("failed to send a request")) {
-      return `The ${functionName} function is not deployed. Deploy it with \`supabase functions deploy ${functionName}\`.`;
-    }
-    return error.message;
-  }
-  return "The admin request failed. Check the Edge Function deployment and try again.";
-}
 
 export function useProfiles(enabled: boolean) {
   const query = useQuery({

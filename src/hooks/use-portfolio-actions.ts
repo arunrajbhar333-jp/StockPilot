@@ -5,6 +5,7 @@ import {
   supabase,
 } from "@/lib/supabase";
 import { parseHoldingVerdict } from "@/lib/mappers";
+import { readFunctionError } from "@/lib/function-error";
 import type { HoldingVerdict } from "@/types/domain";
 
 const PORTFOLIO_KEY = ["portfolio"] as const;
@@ -64,13 +65,13 @@ const MOCK_NOTE =
   "PLACEHOLDER — not a Gemini call: the analyzer is unreachable or no API key is connected.";
 
 /** Stable pseudo-analysis so the same symbol keeps the same placeholder call. */
-function localFallback(symbol: string): HoldingAnalysis {
+function localFallback(symbol: string, note = MOCK_NOTE): HoldingAnalysis {
   let hash = 0;
   for (const character of symbol.toUpperCase()) {
     hash = (hash * 31 + character.charCodeAt(0)) % 997;
   }
   const picked = MOCK_ANALYSES[hash % MOCK_ANALYSES.length];
-  return { ...picked, reasoning: `${MOCK_NOTE} ${picked.reasoning}` };
+  return { ...picked, reasoning: `${note} ${picked.reasoning}` };
 }
 
 interface AnalyzePayload {
@@ -87,6 +88,7 @@ async function runAnalysis(
 ): Promise<HoldingAnalysis> {
   if (!supabase) return localFallback(symbol);
 
+  let failure: string;
   try {
     const { data, error } = await supabase.functions.invoke(
       "analyze-holding",
@@ -107,13 +109,26 @@ async function runAnalysis(
         source: payload.source === "gemini" ? "gemini" : "mock",
       };
     }
+
+    // The function answered, but not with an analysis — keep its own reason so
+    // a Gemini 400/403/429 is visible instead of looking like a missing key.
+    failure = error
+      ? await readFunctionError(error, "analyze-holding")
+      : typeof payload.error === "string" && payload.error
+        ? payload.error
+        : "The analyzer returned no verdict.";
   } catch {
-    /* Function not deployed or offline — fall through to the placeholder. */
+    failure = "The analyzer is unreachable; check that analyze-holding is deployed.";
   }
 
-  // The Edge Function is not available yet. RLS lets the owner write their own
-  // row, so persist the placeholder call straight from the client.
-  const fallback = localFallback(symbol);
+  console.error("[portfolio] analyze-holding failed:", failure);
+
+  // RLS lets the owner write their own row, so persist the placeholder call
+  // straight from the client with the real reason attached.
+  const fallback = localFallback(
+    symbol,
+    `PLACEHOLDER — analyze-holding failed: ${failure}`,
+  );
   const { error: updateError } = await supabase
     .from("portfolio")
     .update({
@@ -172,6 +187,41 @@ export function useAddHolding() {
       );
 
       return { analysis };
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: PORTFOLIO_KEY });
+    },
+  });
+}
+
+export function useDeleteHolding() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (
+      input: { holdingId: string; userId: string },
+    ): Promise<{ holdingId: string }> => {
+      if (!isSupabaseConfigured || !supabase) {
+        throw new Error(SUPABASE_SETUP_MESSAGE);
+      }
+
+      // Scoped to the owner: the "portfolio delete own" policy would reject a
+      // row belonging to anyone else anyway.
+      const { data, error } = await supabase
+        .from("portfolio")
+        .delete()
+        .eq("id", input.holdingId)
+        .eq("user_id", input.userId)
+        .select("id");
+
+      if (error) throw new Error(error.message);
+
+      const deleted = (data ?? []) as { id: string }[];
+      if (deleted.length === 0) {
+        throw new Error("That holding is no longer in your portfolio.");
+      }
+
+      return { holdingId: deleted[0].id };
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: PORTFOLIO_KEY });
