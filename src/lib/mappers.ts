@@ -55,8 +55,10 @@ export interface PortfolioRow {
   buy_price: number | string | null;
   current_price: number | string | null;
   ai_verdict: string | null;
-  reasoning: string | null;
+  ai_reasoning: string | null;
   confidence: number | string | null;
+  purchase_date: string | null;
+  last_analyzed_at: string | null;
   created_at: string | null;
 }
 
@@ -189,12 +191,28 @@ export function mapIpoRow(row: IpoRow): Ipo {
   };
 }
 
-export function mapPortfolioRow(row: PortfolioRow): Holding {
-  const aiVerdict: HoldingVerdict =
-    row.ai_verdict === "BUY" || row.ai_verdict === "SELL"
-      ? row.ai_verdict
-      : "HOLD";
+const HOLDING_VERDICTS: HoldingVerdict[] = [
+  "STRONG BUY",
+  "BUY",
+  "HOLD",
+  "SELL",
+  "STRONG SELL",
+];
 
+/** Accepts "STRONG BUY", "strong_buy" or "strong buy" from the database. */
+export function parseHoldingVerdict(value: string | null): HoldingVerdict {
+  const normalized = (value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  return (
+    HOLDING_VERDICTS.find((verdict) => verdict === normalized) ?? "HOLD"
+  );
+}
+
+export function mapPortfolioRow(row: PortfolioRow): Holding {
   return {
     id: row.id,
     stock: row.stock_name,
@@ -203,9 +221,11 @@ export function mapPortfolioRow(row: PortfolioRow): Holding {
     quantity: toNumber(row.quantity),
     avgPrice: toNumber(row.buy_price),
     ltp: toNumber(row.current_price),
-    aiVerdict,
+    aiVerdict: parseHoldingVerdict(row.ai_verdict),
     confidence: toNumber(row.confidence),
-    reason: row.reasoning ?? "",
+    reason: row.ai_reasoning ?? "",
+    purchaseDate: row.purchase_date,
+    lastAnalyzedAt: row.last_analyzed_at,
   };
 }
 

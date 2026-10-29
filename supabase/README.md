@@ -36,6 +36,14 @@ The `bots` table is defined in section 8 of `schema.sql`. If you already ran an
 earlier version of the schema, re-running the whole file is safe: it only adds
 the new table, policies and grants.
 
+### Upgrading an existing database (Phase 3)
+
+Run [`migrations/20261029120000_portfolio_ai_review.sql`](./migrations/20261029120000_portfolio_ai_review.sql)
+in the SQL editor (or with `supabase db push`). It widens `ai_verdict` to the
+five calls, renames `reasoning` to `ai_reasoning`, and adds `purchase_date` and
+`last_analyzed_at`. Fresh projects that run the current `schema.sql` do not need
+it.
+
 ## 3. Create the first administrator
 
 The app has no public sign-up. Bootstrap your own account:
@@ -55,22 +63,29 @@ Every additional teammate should be created from **Admin Panel → Create user**
 once the functions below are deployed. The trigger assigns them the standard
 `user` role and the Edge Function writes their module permissions.
 
-## 4. Deploy the admin Edge Functions
+## 4. Deploy the Edge Functions
 
 Creating, updating or deleting an Auth user requires the service role key,
-which cannot live in the browser. All three functions check the caller's
-`profiles.role` before calling the Supabase admin API. `admin-delete-user`
-blocks self-deletion, and `admin-update-user` blocks demoting your own account.
+which cannot live in the browser. The three `admin-*` functions check the
+caller's `profiles.role` before calling the Supabase admin API.
+`admin-delete-user` blocks self-deletion, and `admin-update-user` blocks
+demoting your own account. `analyze-holding` takes no admin rights: it only
+grades the caller's own position.
 
 ```bash
 supabase functions deploy admin-create-user
 supabase functions deploy admin-update-user
 supabase functions deploy admin-delete-user
+supabase functions deploy analyze-holding
 ```
 
 Supabase injects `SUPABASE_URL`, `SUPABASE_ANON_KEY` and
-`SUPABASE_SERVICE_ROLE_KEY` into deployed functions automatically. No extra
-secrets are required.
+`SUPABASE_SERVICE_ROLE_KEY` into deployed functions automatically.
+`analyze-holding` additionally reads `GEMINI_API_KEY`; set it under
+**Project Settings → Edge Functions → Secrets** (optionally `GEMINI_MODEL`,
+default `gemini-2.5-flash`). Without the key it stores a deterministic
+placeholder verdict so **My Portfolio → Add stock** still works, and the app has
+the same fallback if the function is not deployed yet.
 
 Until these functions are deployed, the Create user, Edit user and Remove user
 actions will report that the function is unreachable.
@@ -83,11 +98,14 @@ account before running:
 ```sql
 insert into public.portfolio (
   user_id, stock_name, symbol, sector, quantity,
-  buy_price, current_price, ai_verdict, reasoning, confidence
+  buy_price, current_price, purchase_date,
+  ai_verdict, ai_reasoning, confidence, last_analyzed_at
 )
 select id, 'Reliance Industries', 'RELIANCE', 'Energy', 40,
-       2410.50, 2688.40, 'HOLD',
-       'Strong Jio and retail cash flows, but the current price already discounts the next two quarters.', 74
+       2410.50, 2688.40, '2026-04-14',
+       'HOLD',
+       'Strong Jio and retail cash flows, but the current price already discounts the next two quarters.',
+       74, now()
 from public.profiles
 where email = 'you@company.com';
 ```
@@ -97,6 +115,11 @@ where email = 'you@company.com';
 - IPO, portfolio and SIP screens read from Supabase through React Query.
   `ipos` and `portfolio` also subscribe to Postgres changes, so edits appear
   without a refresh.
+- Adding a holding writes the row, then invokes `analyze-holding`, which grades
+  it with Gemini and saves `ai_verdict`, `ai_reasoning`, `confidence` and
+  `last_analyzed_at`. The verdict columns are advisory, not investment advice.
+  Positions are marked at cost until a live price feed updates
+  `current_price`, and the UI tints SELL / STRONG SELL rows red.
 - The Admin Panel's **Bot management** tab writes to `bots` and masks tokens in
   the UI. The Hinglish message builders live in
   `src/lib/notification-templates.ts`; they are formatting helpers until the

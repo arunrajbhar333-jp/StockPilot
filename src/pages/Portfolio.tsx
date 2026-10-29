@@ -1,7 +1,9 @@
-import { useMemo } from "react";
-import { ArrowDownRight, ArrowUpRight, Sparkles } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowDownRight, ArrowUpRight, Plus, Sparkles } from "lucide-react";
+import { AddStockDialog } from "@/components/add-stock-dialog";
 import { PageHeader } from "@/components/page-header";
-import { VerdictBadge } from "@/components/signals";
+import { VerdictBadge, isSellVerdict } from "@/components/signals";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -83,6 +85,7 @@ export default function Portfolio() {
     error,
     refetch,
   } = usePortfolio(user?.id ?? null);
+  const [addOpen, setAddOpen] = useState(false);
   const positions = useMemo(() => buildPositions(holdings), [holdings]);
 
   const totals = useMemo(() => {
@@ -90,9 +93,13 @@ export default function Portfolio() {
     const current = positions.reduce((sum, p) => sum + p.current, 0);
     const pnl = current - invested;
     const verdicts = {
-      BUY: positions.filter((p) => p.aiVerdict === "BUY").length,
+      BUY: positions.filter(
+        (p) => p.aiVerdict === "BUY" || p.aiVerdict === "STRONG BUY",
+      ).length,
       HOLD: positions.filter((p) => p.aiVerdict === "HOLD").length,
-      SELL: positions.filter((p) => p.aiVerdict === "SELL").length,
+      SELL: positions.filter(
+        (p) => p.aiVerdict === "SELL" || p.aiVerdict === "STRONG SELL",
+      ).length,
     };
     return {
       invested,
@@ -113,12 +120,22 @@ export default function Portfolio() {
       <PageHeader
         eyebrow={`Holdings · ${positions.length} position${positions.length === 1 ? "" : "s"}`}
         title="My portfolio"
-        description="Each position carries a current AI verdict and the reasoning behind it. Verdicts refresh after the market closes."
+        description="Each position carries a graded AI verdict and the reasoning behind it. Add a holding to have it rated from strong buy to strong sell."
         actions={
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
-            <Sparkles className="size-3 text-ai" />
-            AI review · latest close
-          </span>
+          <>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
+              <Sparkles className="size-3 text-ai" />
+              AI review · latest close
+            </span>
+            <Button
+              onClick={() => setAddOpen(true)}
+              size="sm"
+              className="primary-glow-sm h-9 gap-1.5 rounded-lg bg-primary px-3 text-[12px] font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              <Plus className="size-3.5" />
+              Add stock
+            </Button>
+          </>
         }
       />
 
@@ -280,8 +297,8 @@ export default function Portfolio() {
           </div>
         ) : positions.length === 0 ? (
           <p className="px-4 py-10 text-center text-[11px] leading-relaxed text-muted-foreground sm:px-5">
-            No holdings yet. Positions added to your Supabase account will appear
-            here.
+            No holdings yet. Use <span className="text-foreground">Add stock</span>{" "}
+            to record your first position and get an AI verdict.
           </p>
         ) : (
           <>
@@ -311,7 +328,11 @@ export default function Portfolio() {
               {positions.map((position) => (
                 <TableRow
                   key={position.id}
-                  className="border-white/[0.05] hover:bg-white/[0.03]"
+                  className={cn(
+                    "border-white/[0.05] hover:bg-white/[0.03]",
+                    isSellVerdict(position.aiVerdict) &&
+                      "bg-negative/[0.05] hover:bg-negative/[0.08]",
+                  )}
                 >
                   <TableCell className="py-3.5">
                     <div className="flex items-center gap-2.5">
@@ -340,8 +361,8 @@ export default function Portfolio() {
                   <TableCell className="text-right">
                     <PnlText pnl={position.pnl} pnlPct={position.pnlPct} />
                   </TableCell>
-                  <TableCell className="max-w-[300px] pr-5">
-                    <div className="flex items-start gap-2">
+                  <TableCell className="max-w-[320px] pr-5">
+                    <div className="flex flex-wrap items-start gap-2">
                       <VerdictBadge verdict={position.aiVerdict} />
                       <p className="text-[10px] leading-relaxed text-muted-foreground">
                         {position.reason}
@@ -359,7 +380,13 @@ export default function Portfolio() {
           {positions.map((position) => {
             const positive = position.pnl >= 0;
             return (
-              <div key={position.id} className="p-4">
+              <div
+                key={position.id}
+                className={cn(
+                  "p-4",
+                  isSellVerdict(position.aiVerdict) && "bg-negative/[0.05]",
+                )}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[10px] font-semibold text-muted-foreground">
@@ -428,6 +455,8 @@ export default function Portfolio() {
           Not investment advice.
         </div>
       </section>
+
+      <AddStockDialog open={addOpen} onOpenChange={setAddOpen} />
     </div>
   );
 }

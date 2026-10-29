@@ -60,9 +60,13 @@ create table if not exists public.portfolio (
   buy_price numeric(14, 2) not null default 0,
   current_price numeric(14, 2) not null default 0,
   ai_verdict text not null default 'HOLD'
-    check (ai_verdict in ('BUY', 'HOLD', 'SELL')),
-  reasoning text,
+    check (ai_verdict in (
+      'STRONG BUY', 'BUY', 'HOLD', 'SELL', 'STRONG SELL'
+    )),
+  ai_reasoning text,
   confidence integer check (confidence between 0 and 100),
+  purchase_date date,
+  last_analyzed_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -431,11 +435,14 @@ grant select, insert, update, delete on public.bots to authenticated;
 --
 --    insert into public.portfolio (
 --      user_id, stock_name, symbol, sector, quantity,
---      buy_price, current_price, ai_verdict, reasoning, confidence
+--      buy_price, current_price, purchase_date,
+--      ai_verdict, ai_reasoning, confidence, last_analyzed_at
 --    )
 --    select id, 'Reliance Industries', 'RELIANCE', 'Energy', 40,
---           2410.50, 2688.40, 'HOLD',
---           'Strong Jio and retail cash flows, but the current price already discounts the next two quarters.', 74
+--           2410.50, 2688.40, '2026-04-14',
+--           'HOLD',
+--           'Strong Jio and retail cash flows, but the current price already discounts the next two quarters.',
+--           74, now()
 --    from public.profiles
 --    where email = 'you@company.com';
 -- =============================================================================

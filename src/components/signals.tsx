@@ -7,10 +7,16 @@ import type {
 import { cn } from "@/lib/utils";
 
 export type AnyVerdict = IpoVerdict | HoldingVerdict | SipVerdict;
-type Tone = "positive" | "neutral" | "negative";
+type Tone =
+  | "positive"
+  | "neutral"
+  | "negative"
+  | "strongPositive"
+  | "strongNegative";
 
 const verdictTone: Record<AnyVerdict, Tone> = {
   APPLY: "positive",
+  "STRONG BUY": "strongPositive",
   BUY: "positive",
   START: "positive",
   WATCH: "neutral",
@@ -18,19 +24,31 @@ const verdictTone: Record<AnyVerdict, Tone> = {
   WAIT: "neutral",
   AVOID: "negative",
   SELL: "negative",
+  "STRONG SELL": "strongNegative",
 };
 
 const toneStyles: Record<Tone, string> = {
   positive: "border-signal/25 bg-signal/10 text-signal",
   neutral: "border-gold/25 bg-gold/10 text-gold",
   negative: "border-negative/25 bg-negative/10 text-negative",
+  strongPositive:
+    "border-signal/45 bg-signal/[0.16] text-signal ring-1 ring-signal/25",
+  strongNegative:
+    "border-negative/45 bg-negative/[0.16] text-negative ring-1 ring-negative/25",
 };
 
 const dotStyles: Record<Tone, string> = {
   positive: "bg-signal",
   neutral: "bg-gold",
   negative: "bg-negative",
+  strongPositive: "bg-signal",
+  strongNegative: "bg-negative",
 };
+
+/** True for the two strongest negative calls, used to tint whole rows. */
+export function isSellVerdict(verdict: HoldingVerdict): boolean {
+  return verdict === "SELL" || verdict === "STRONG SELL";
+}
 
 export function VerdictBadge({
   verdict,
@@ -41,10 +59,13 @@ export function VerdictBadge({
 }) {
   const tone = verdictTone[verdict];
 
+  const strong = tone === "strongPositive" || tone === "strongNegative";
+
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-semibold tracking-[0.12em]",
+        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] tracking-[0.12em] whitespace-nowrap",
+        strong ? "font-bold" : "font-semibold",
         toneStyles[tone],
         className,
       )}

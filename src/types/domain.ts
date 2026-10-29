@@ -2,7 +2,12 @@ export type ModuleKey = "ipo" | "portfolio" | "sip";
 export type UserRole = "admin" | "user";
 export type UserStatus = "active" | "invited" | "suspended";
 export type IpoVerdict = "APPLY" | "WATCH" | "AVOID";
-export type HoldingVerdict = "BUY" | "HOLD" | "SELL";
+export type HoldingVerdict =
+  | "STRONG BUY"
+  | "BUY"
+  | "HOLD"
+  | "SELL"
+  | "STRONG SELL";
 export type SipVerdict = "START" | "WAIT";
 export type IpoType = "SME" | "Mainboard";
 export type IpoStatus = "Open" | "Closing today" | "Upcoming";
@@ -63,6 +68,10 @@ export interface Holding {
   aiVerdict: HoldingVerdict;
   confidence: number;
   reason: string;
+  /** ISO date (YYYY-MM-DD) the position was bought, when recorded. */
+  purchaseDate: string | null;
+  /** ISO timestamp of the last AI analysis, null until one has run. */
+  lastAnalyzedAt: string | null;
 }
 
 export interface Stock {
