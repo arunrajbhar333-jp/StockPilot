@@ -1,4 +1,11 @@
+.env
 .env.local
 node_modules
 dist
 src/convex/_generated
+
+# Python scraper
+__pycache__/
+*.pyc
+scraper/.venv/
+scraper/.env

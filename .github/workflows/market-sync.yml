@@ -1,0 +1,46 @@
+name: StockPilot market sync
+
+# Every 15 minutes. GitHub cron runs in UTC, which is fine for a 15-minute
+# cadence. Scheduled runs can be delayed a few minutes at peak times.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stockpilot-market-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync indices, IPOs and portfolio prices
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scraper/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scraper/requirements.txt
+
+      - name: Run the market sync
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Optional: a licensed GMP feed (see scraper/README.md).
+          IPO_GMP_API_URL: ${{ vars.IPO_GMP_API_URL }}
+          IPO_GMP_API_KEY: ${{ secrets.IPO_GMP_API_KEY }}
+          AI_TRIGGER_PCT: "1.5"
+          AI_MAX_ANALYSES: "20"
+        run: python scraper/scraper.py

@@ -49,8 +49,10 @@ SQL editor or with `supabase db push`.
   is denied on all tables. `is_admin()` also returns false for suspended admins.
   The only row a suspended account can still read is its own profile, which is
   how the app detects the suspension and signs it out.
+- `20261029190000_market_indices.sql` creates the read-only `market_indices`
+  table that the Python market sync writes.
 
-Fresh projects that run the current `schema.sql` already include both.
+Fresh projects that run the current `schema.sql` already include all three.
 
 ## 3. Create the first administrator
 
@@ -95,6 +97,11 @@ Supabase injects `SUPABASE_URL`, `SUPABASE_ANON_KEY` and
 default `gemini-2.5-flash`). Without the key it stores a deterministic
 placeholder verdict so **My Portfolio → Add stock** still works, and the app has
 the same fallback if the function is not deployed yet.
+
+`analyze-holding` also accepts the service role key as a system caller so the
+Python market sync can refresh any holding. In that mode it never writes a
+placeholder: a missing key or a Gemini failure returns an error and the previous
+verdict is kept. See [`../scraper/README.md`](../scraper/README.md).
 
 Until these functions are deployed, the Create user, Edit user and Remove user
 actions will report that the function is unreachable.

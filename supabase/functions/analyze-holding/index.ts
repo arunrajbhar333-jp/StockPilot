@@ -3,6 +3,14 @@
 // Generates a STRONG BUY / BUY / HOLD / SELL / STRONG SELL call for one
 // portfolio position with the Gemini API and stores the result on the row.
 //
+// Two callers are supported:
+//   1. A signed-in member, who may only analyse their own holding. Missing key
+//      or a Gemini failure stores a clearly-labelled placeholder verdict.
+//   2. The market-sync scraper, which sends the service role key instead of a
+//      user token so it can refresh any holding. In that mode no placeholder is
+//      written: a missing key or failed call returns an error and the previous
+//      verdict is kept.
+//
 // Deploy:
 //   supabase functions deploy analyze-holding
 //
@@ -44,6 +52,16 @@ function isVerdict(value: unknown): value is Verdict {
   return (
     typeof value === "string" && (VERDICTS as readonly string[]).includes(value)
   );
+}
+
+/** Length-constant comparison for the service role key. */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let difference = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    difference |= a.charCodeAt(index) ^ b.charCodeAt(index);
+  }
+  return difference === 0;
 }
 
 interface HoldingRow {
@@ -262,31 +280,37 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Missing bearer token." }, 401);
   }
   const accessToken = authorization.slice("Bearer ".length);
+  const systemCaller = safeEqual(accessToken, serviceRoleKey);
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const {
-    data: { user: caller },
-    error: callerError,
-  } = await admin.auth.getUser(accessToken);
+  let callerId: string | null = null;
 
-  if (callerError || !caller) {
-    return json({ error: "Your session is invalid. Sign in again." }, 401);
-  }
+  if (!systemCaller) {
+    const {
+      data: { user: caller },
+      error: callerError,
+    } = await admin.auth.getUser(accessToken);
 
-  const { data: callerProfile, error: callerProfileError } = await admin
-    .from("profiles")
-    .select("status")
-    .eq("id", caller.id)
-    .maybeSingle();
+    if (callerError || !caller) {
+      return json({ error: "Your session is invalid. Sign in again." }, 401);
+    }
+    callerId = caller.id;
 
-  if (callerProfileError) {
-    return json({ error: "Could not verify your profile." }, 500);
-  }
-  if (callerProfile?.status === "suspended") {
-    return json({ error: "This account is suspended." }, 403);
+    const { data: callerProfile, error: callerProfileError } = await admin
+      .from("profiles")
+      .select("status")
+      .eq("id", caller.id)
+      .maybeSingle();
+
+    if (callerProfileError) {
+      return json({ error: "Could not verify your profile." }, 500);
+    }
+    if (callerProfile?.status === "suspended") {
+      return json({ error: "This account is suspended." }, 403);
+    }
   }
 
   let body: { holdingId?: unknown };
@@ -317,7 +341,7 @@ Deno.serve(async (req: Request) => {
   if (!holding) {
     return json({ error: "That holding no longer exists." }, 404);
   }
-  if ((holding as HoldingRow).user_id !== caller.id) {
+  if (!systemCaller && (holding as HoldingRow).user_id !== callerId) {
     return json({ error: "You can only analyse your own holdings." }, 403);
   }
 
@@ -327,6 +351,12 @@ Deno.serve(async (req: Request) => {
 
   let analysis: Analysis;
   if (!apiKey) {
+    if (systemCaller) {
+      return json({
+        skipped: true,
+        reason: "GEMINI_API_KEY is not set; the previous verdict was kept.",
+      });
+    }
     analysis = placeholderAnalysis(
       row.symbol ?? row.stock_name,
       "PLACEHOLDER — not a Gemini call: GEMINI_API_KEY is not set.",
@@ -336,6 +366,13 @@ Deno.serve(async (req: Request) => {
       analysis = await analyzeWithGemini(row, apiKey, model);
     } catch (error) {
       console.error("[analyze-holding] Gemini call failed:", error);
+      if (systemCaller) {
+        // Never replace a real verdict with a placeholder during a bulk sync.
+        return json(
+          { error: "Gemini analysis failed; the previous verdict was kept." },
+          502,
+        );
+      }
       analysis = placeholderAnalysis(
         row.symbol ?? row.stock_name,
         "PLACEHOLDER — not a Gemini call: Gemini was unreachable.",
@@ -353,8 +390,7 @@ Deno.serve(async (req: Request) => {
       confidence: analysis.confidence,
       last_analyzed_at: analyzedAt,
     })
-    .eq("id", row.id)
-    .eq("user_id", caller.id);
+    .eq("id", row.id);
 
   if (updateError) {
     return json({ error: `The verdict could not be saved: ${updateError.message}` }, 500);

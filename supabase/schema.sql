@@ -406,7 +406,35 @@ insert into public.sips (
 on conflict (id) do nothing;
 
 -- -----------------------------------------------------------------------------
--- 8. Telegram bots (admin-managed)
+-- 8. Market indices (scraper-managed)
+-- -----------------------------------------------------------------------------
+-- Written by scraper/scraper.py with the service role key; readable by active
+-- members. No authenticated write policies on purpose.
+
+create table if not exists public.market_indices (
+  id text primary key,
+  symbol text not null,
+  name text not null,
+  value numeric(14, 2) not null,
+  change numeric(14, 2) not null default 0,
+  change_pct numeric(8, 2) not null default 0,
+  day_low numeric(14, 2),
+  day_high numeric(14, 2),
+  spark numeric[],
+  updated_at timestamptz not null default now()
+);
+
+alter table public.market_indices enable row level security;
+
+drop policy if exists "market_indices read active" on public.market_indices;
+create policy "market_indices read active"
+  on public.market_indices for select to authenticated
+  using (public.is_active_member());
+
+grant select on public.market_indices to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- 9. Telegram bots (admin-managed)
 -- -----------------------------------------------------------------------------
 -- Treat telegram_bot_token as a secret. Row-level security limits every
 -- operation on this table to administrators; the dispatcher reads it
@@ -448,7 +476,7 @@ create policy "bots admin delete"
 grant select, insert, update, delete on public.bots to authenticated;
 
 -- -----------------------------------------------------------------------------
--- 9. Manual steps after bootstrapping the first account
+-- 10. Manual steps after bootstrapping the first account
 -- -----------------------------------------------------------------------------
 -- 1) Create your own account in Authentication → Users (Auto Confirm User).
 -- 2) Promote it to administrator:
