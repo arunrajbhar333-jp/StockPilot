@@ -1,8 +1,8 @@
 # StockPilot backend setup
 
-The frontend now uses Supabase Auth plus five tables: `profiles`, `ipos`,
-`portfolio`, `sips` and `bots`. Run the steps below in the Supabase project that
-StockPilot should use.
+The frontend now uses Supabase Auth plus six tables: `profiles`, `ipos`,
+`portfolio`, `sips`, `bots` and `market_indices`. Run the steps below in the
+Supabase project that StockPilot should use.
 
 ## 1. Environment variables
 
@@ -88,6 +88,7 @@ supabase functions deploy admin-create-user
 supabase functions deploy admin-update-user
 supabase functions deploy admin-delete-user
 supabase functions deploy analyze-holding
+supabase functions deploy market-mood
 ```
 
 Supabase injects `SUPABASE_URL`, `SUPABASE_ANON_KEY` and
@@ -105,6 +106,16 @@ verdict is kept. See [`../scraper/README.md`](../scraper/README.md).
 
 Until these functions are deployed, the Create user, Edit user and Remove user
 actions will report that the function is unreachable.
+
+`market-mood` powers the dashboard's **AI market mood** and **Desk briefing**
+cards. The browser sends no market payload: the function verifies the caller's
+JWT and profile status, reads the latest `market_indices` snapshot itself, and
+asks Gemini for a 0-100 sentiment score, a one-line read of the tape and three
+briefing notes. It reads the same `GEMINI_API_KEY` and `GEMINI_MODEL` secrets as
+`analyze-holding`; without a key, or when Gemini returns nothing usable, it
+answers with an error so the cards show the reason and a Retry button instead of
+a fabricated reading. It runs on demand and the dashboard refreshes it every 15
+minutes, so a fresh market sync is picked up on the next refresh.
 
 ## 5. Optional holdings seed
 
@@ -152,9 +163,11 @@ where email = 'you@company.com';
 - Bot tokens are stored as text because the dispatcher must authenticate with
   Telegram. RLS limits access to administrators, but database backups and admin
   accounts should still be treated as sensitive.
-- Market indices, AI sentiment, desk alerts and the market catalogue are still
-  local reference data. They will move to the scraper/Gemini jobs in the next
-  phase.
+- Index snapshots, the dashboard's AI market mood and its desk briefing come
+  from Supabase: `scraper/scraper.py` writes `market_indices` every 15 minutes
+  and the `market-mood` Edge Function scores it with Gemini. Desk alerts and the
+  market catalogue are still local reference data, as is the signed-out login
+  spotlight.
 - Keep the Supabase project's **Confirm email** setting in mind: accounts made
   from the Admin Panel are pre-confirmed by the Edge Function. Accounts created
   manually in the dashboard need **Auto Confirm User** (or a confirmed email)

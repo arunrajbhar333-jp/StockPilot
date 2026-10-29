@@ -2,11 +2,11 @@
  * Static reference content.
  *
  * Authentication, IPOs, portfolios, SIPs and index snapshots now come from
- * Supabase. The signed-out spotlight index values, sentiment, the catalogue and
- * desk alerts remain local reference data until the sentiment job is connected.
+ * Supabase; the dashboard's market mood and desk briefing come from the
+ * market-mood Edge Function. The signed-out spotlight values, sentiment,
+ * catalogue and desk alerts remain local reference data.
  */
 import type {
-  DeskNote,
   MarketIndex,
   MarketMood,
   ModuleKey,
@@ -268,27 +268,6 @@ export const marketMood: MarketMood = {
     { label: "Nifty RSI (14D)", value: "61.2", direction: "up" },
   ],
 };
-
-export const deskNotes: DeskNote[] = [
-  {
-    id: 1,
-    title: "Rotate, don't chase",
-    body: "Stagger fresh capital across a few tranches instead of committing at one price; conviction, not momentum, should size the position.",
-    tag: "Portfolio",
-  },
-  {
-    id: 2,
-    title: "NexaGrid leads the cycle",
-    body: "A 22x subscription with long-only anchors should support a firm listing unless the index corrects more than 2%.",
-    tag: "IPO",
-  },
-  {
-    id: 3,
-    title: "Stagger mid-cap SIPs",
-    body: "Mid-cap valuations sit at 34x earnings; split fresh inflows across six months rather than committing at once.",
-    tag: "SIP",
-  },
-];
 
 export const notifications = [
   {

@@ -35,6 +35,22 @@ export function formatSignedInr(value: number): string {
   return `${sign}${inr.format(Math.abs(value))}`;
 }
 
+/** ISO timestamp -> "just now" / "12 min ago" / "3 hr ago" / "2 days ago". */
+export function formatRelativeTime(iso: string, now = Date.now()): string {
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return "just now";
+
+  const minutes = Math.round((now - parsed) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
 export function initials(name: string): string {
   return name
     .split(" ")

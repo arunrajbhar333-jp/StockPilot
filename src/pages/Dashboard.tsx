@@ -14,8 +14,12 @@ import { Sparkline } from "@/components/sparkline";
 import { ChangePill, VerdictBadge } from "@/components/signals";
 import { IpoTable } from "@/components/ipo-table";
 import { Button } from "@/components/ui/button";
-import { deskNotes, marketMood } from "@/data/referenceData";
-import { useIpos, useMarketIndices, useSips } from "@/hooks/use-market-data";
+import {
+  useIpos,
+  useMarketIndices,
+  useMarketMood,
+  useSips,
+} from "@/hooks/use-market-data";
 import { useSession } from "@/lib/session";
 import type { MarketIndex, MarketMood } from "@/types/domain";
 import { cn } from "@/lib/utils";
@@ -166,6 +170,14 @@ function MoodDriverIcon({
   return <Minus className="size-3 text-muted-foreground" />;
 }
 
+function riskLabel(
+  sentiment: MarketMood["sentiment"],
+): "Risk-on" | "Balanced" | "Risk-off" {
+  if (sentiment === "Bullish") return "Risk-on";
+  if (sentiment === "Bearish") return "Risk-off";
+  return "Balanced";
+}
+
 export default function Dashboard() {
   const { user, canAccess } = useSession();
   const {
@@ -187,6 +199,14 @@ export default function Dashboard() {
     refetch: refetchIndices,
     configured: indicesConfigured,
   } = useMarketIndices();
+  const {
+    mood,
+    briefing,
+    isLoading: moodLoading,
+    error: moodError,
+    refetch: refetchMood,
+    configured: moodConfigured,
+  } = useMarketMood();
   const firstName = user?.name.split(" ")[0] ?? "Investor";
 
   const hour = new Date().getHours();
@@ -203,7 +223,15 @@ export default function Dashboard() {
       <PageHeader
         eyebrow="NSE · BSE · Market intelligence"
         title={`${greeting}, ${firstName}`}
-        description={`${dateLabel} · The desk reads a ${marketMood.sentiment.toLowerCase()} tape at ${marketMood.confidence}% model confidence.`}
+        description={`${dateLabel} · ${
+          mood
+            ? `The desk reads a ${mood.sentiment.toLowerCase()} tape at ${mood.confidence}% model confidence.`
+            : moodError
+              ? "AI market mood is unavailable — retry from the mood card."
+              : moodConfigured
+                ? "Reading the latest index snapshot for the AI market mood."
+                : "Supabase is not configured, so live data cannot load."
+        }`}
         actions={
           <>
             <span className="hidden items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground sm:inline-flex">
@@ -289,63 +317,120 @@ export default function Dashboard() {
                 AI market mood
               </h2>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                Flows, breadth and volatility fused into a single reading.
+                The latest index snapshot, scored and summarised by Gemini.
               </p>
             </div>
             <span className="shrink-0 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[9px] text-muted-foreground">
-              Gemini · {marketMood.updated}
+              {mood ? `Gemini · ${mood.updated}` : "Gemini"}
             </span>
           </div>
 
-          <div className="mt-4 flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-6">
-            <MoodRing score={marketMood.score} />
-
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <p className="font-display text-2xl font-semibold text-foreground">
-                  {marketMood.sentiment}
-                </p>
-                <span className="rounded border border-signal/25 bg-signal/10 px-1.5 py-0.5 text-[9px] font-medium tracking-wide text-signal uppercase">
-                  Risk-on
-                </span>
-              </div>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
-                {marketMood.headline}
-              </p>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {marketMood.drivers.map((driver) => (
-                  <div
-                    key={driver.label}
-                    className="rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2"
-                  >
-                    <p className="text-[9px] tracking-wide text-muted-foreground">
-                      {driver.label}
-                    </p>
-                    <p className="num mt-1 flex items-center gap-1 text-[11px] text-foreground">
-                      {driver.value}
-                      <MoodDriverIcon direction={driver.direction} />
-                    </p>
-                  </div>
+          {moodLoading ? (
+            <div className="mt-4 animate-pulse space-y-3" aria-hidden="true">
+              <div className="h-7 w-40 rounded bg-muted" />
+              <div className="h-3 w-full rounded bg-muted/70" />
+              <div className="h-3 w-2/3 rounded bg-muted/70" />
+              <div className="grid grid-cols-2 gap-2">
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="h-10 rounded-lg bg-muted" />
                 ))}
               </div>
             </div>
-          </div>
-
-          <div className="mt-4 flex items-center gap-3 border-t border-white/[0.06] pt-3.5">
-            <p className="text-[10px] whitespace-nowrap text-muted-foreground">
-              Model confidence
-            </p>
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-ai via-primary to-signal"
-                style={{ width: `${marketMood.confidence}%` }}
-              />
+          ) : moodError ? (
+            <div className="mt-4 flex flex-col items-center gap-2 py-5 text-center">
+              <p className="text-[11px] text-negative">{moodError.message}</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void refetchMood()}
+                className="h-7 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                Retry
+              </Button>
             </div>
-            <p className="num text-[10px] text-foreground">
-              {marketMood.confidence}%
-            </p>
-          </div>
+          ) : !mood ? (
+            <div className="mt-4 py-5 text-center">
+              <p className="text-[12px] font-medium text-foreground">
+                No AI reading yet
+              </p>
+              <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-muted-foreground">
+                {moodConfigured
+                  ? "Gemini reads the tape once the market sync has written an index snapshot."
+                  : "Supabase is not configured, so the mood model cannot run."}
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void refetchMood()}
+                className="mt-3 h-7 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                Refresh
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="mt-4 flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-6">
+                <MoodRing score={mood.score} />
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <p className="font-display text-2xl font-semibold text-foreground">
+                      {mood.sentiment}
+                    </p>
+                    <span
+                      className={cn(
+                        "rounded border px-1.5 py-0.5 text-[9px] font-medium tracking-wide uppercase",
+                        mood.sentiment === "Bullish"
+                          ? "border-signal/25 bg-signal/10 text-signal"
+                          : mood.sentiment === "Bearish"
+                            ? "border-negative/25 bg-negative/10 text-negative"
+                            : "border-primary/25 bg-primary/10 text-primary",
+                      )}
+                    >
+                      {riskLabel(mood.sentiment)}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+                    {mood.headline}
+                  </p>
+
+                  {mood.drivers.length > 0 && (
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {mood.drivers.map((driver) => (
+                        <div
+                          key={driver.label}
+                          className="rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2"
+                        >
+                          <p className="text-[9px] tracking-wide text-muted-foreground">
+                            {driver.label}
+                          </p>
+                          <p className="num mt-1 flex items-center gap-1 text-[11px] text-foreground">
+                            {driver.value}
+                            <MoodDriverIcon direction={driver.direction} />
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3 border-t border-white/[0.06] pt-3.5">
+                <p className="text-[10px] whitespace-nowrap text-muted-foreground">
+                  Model confidence
+                </p>
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-ai via-primary to-signal"
+                    style={{ width: `${mood.confidence}%` }}
+                  />
+                </div>
+                <p className="num text-[10px] text-foreground">
+                  {mood.confidence}%
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="glass lift rounded-2xl p-4 sm:p-5">
@@ -356,27 +441,80 @@ export default function Dashboard() {
             </span>
           </div>
 
-          <div className="mt-3 divide-y divide-white/[0.06]">
-            {deskNotes.map((note) => (
-              <div key={note.id} className="py-3 first:pt-1 last:pb-1">
-                <div className="flex items-center gap-2">
-                  <span className="rounded border border-white/[0.08] bg-white/[0.03] px-1.5 py-0.5 text-[9px] tracking-wide text-muted-foreground">
-                    {note.tag}
-                  </span>
-                  <p className="text-[11px] font-medium text-foreground">
-                    {note.title}
+          {moodLoading ? (
+            <div className="mt-3 animate-pulse space-y-4" aria-hidden="true">
+              {[0, 1, 2].map((item) => (
+                <div
+                  key={item}
+                  className="space-y-2 border-b border-white/[0.06] pb-3 last:border-0 last:pb-0"
+                >
+                  <div className="h-2.5 w-16 rounded bg-muted" />
+                  <div className="h-3 w-2/3 rounded bg-muted" />
+                  <div className="h-2.5 w-full rounded bg-muted/70" />
+                </div>
+              ))}
+            </div>
+          ) : moodError ? (
+            <div className="mt-3 flex flex-col items-center gap-2 py-4 text-center">
+              <p className="text-[11px] text-negative">{moodError.message}</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void refetchMood()}
+                className="h-7 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                Retry
+              </Button>
+            </div>
+          ) : briefing.length === 0 ? (
+            <div className="mt-3 py-4 text-center">
+              <p className="text-[12px] font-medium text-foreground">
+                No briefing yet
+              </p>
+              <p className="mx-auto mt-1 max-w-xs text-[11px] leading-relaxed text-muted-foreground">
+                {moodConfigured
+                  ? "Gemini writes these notes from the index snapshot, so the market sync must run first."
+                  : "Supabase is not configured, so the briefing cannot load."}
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void refetchMood()}
+                className="mt-3 h-7 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                Refresh
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-3 divide-y divide-white/[0.06]">
+              {briefing.map((note) => (
+                <div
+                  key={`${note.tag}-${note.title}`}
+                  className="py-3 first:pt-1 last:pb-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="rounded border border-white/[0.08] bg-white/[0.03] px-1.5 py-0.5 text-[9px] tracking-wide text-muted-foreground">
+                      {note.tag}
+                    </span>
+                    <p className="text-[11px] font-medium text-foreground">
+                      {note.title}
+                    </p>
+                  </div>
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                    {note.body}
                   </p>
                 </div>
-                <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                  {note.body}
-                </p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           <p className="mt-2 flex items-center gap-1.5 border-t border-white/[0.06] pt-3 text-[9px] text-muted-foreground/70">
             <Sparkles className="size-2.5 text-ai" />
-            Generated by Gemini · refreshed 12 min ago
+            {mood
+              ? `Generated by Gemini · ${mood.updated}`
+              : moodError
+                ? "Gemini did not return a briefing"
+                : "Waiting on a Gemini run"}
           </p>
         </div>
       </section>

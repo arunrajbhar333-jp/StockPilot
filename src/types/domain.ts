@@ -124,3 +124,18 @@ export interface DeskNote {
   body: string;
   tag: string;
 }
+
+/** One item in the dashboard's AI desk briefing. */
+export interface DeskBriefingItem {
+  tag: string;
+  title: string;
+  body: string;
+}
+
+/** Everything the market-mood Edge Function returns for the dashboard. */
+export interface MarketBriefing {
+  mood: MarketMood;
+  briefing: DeskBriefingItem[];
+  /** ISO timestamp of the Gemini call that produced this analysis. */
+  generatedAt: string;
+}

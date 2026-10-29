@@ -15,11 +15,22 @@ import {
   type PortfolioRow,
   type SipRow,
 } from "@/lib/mappers";
-import type { Holding, Ipo, MarketIndex, SipFund } from "@/types/domain";
+import { formatRelativeTime } from "@/lib/format";
+import { readFunctionError } from "@/hooks/use-profiles";
+import type {
+  DeskBriefingItem,
+  Holding,
+  Ipo,
+  MarketBriefing,
+  MarketIndex,
+  MarketMood,
+  SipFund,
+} from "@/types/domain";
 
 const IPO_KEY = ["ipos"] as const;
 const SIPS_KEY = ["sips"] as const;
 const MARKET_INDICES_KEY = ["market_indices"] as const;
+const MARKET_MOOD_KEY = ["market_mood"] as const;
 
 /** Rows written by scraper/scraper.py, in the order the dashboard shows them. */
 const MARKET_INDEX_IDS = ["nifty50", "sensex", "banknifty"];
@@ -153,6 +164,149 @@ export function useMarketIndices() {
 
   return {
     indices: query.data ?? [],
+    isLoading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+    configured: isSupabaseConfigured,
+  };
+}
+
+interface MoodPayload {
+  mood?: {
+    sentiment?: unknown;
+    score?: unknown;
+    confidence?: unknown;
+    headline?: unknown;
+    drivers?: unknown;
+    generatedAt?: unknown;
+  };
+  briefing?: unknown;
+  error?: string;
+}
+
+const SENTIMENTS: MarketMood["sentiment"][] = ["Bullish", "Bearish", "Neutral"];
+
+function clampPercent(value: unknown, fallback: number): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(100, Math.max(0, Math.round(parsed)));
+}
+
+function parseDrivers(value: unknown): MarketMood["drivers"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    if (typeof record.label !== "string" || typeof record.value !== "string") {
+      return [];
+    }
+    return [
+      {
+        label: record.label.slice(0, 40),
+        value: record.value.slice(0, 24),
+        direction:
+          record.direction === "up" || record.direction === "down"
+            ? record.direction
+            : "flat",
+      },
+    ];
+  });
+}
+
+function parseBriefing(value: unknown): DeskBriefingItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const record = item as Record<string, unknown>;
+      if (
+        typeof record.tag !== "string" ||
+        typeof record.title !== "string" ||
+        typeof record.body !== "string"
+      ) {
+        return [];
+      }
+      return [
+        {
+          tag: record.tag.slice(0, 24),
+          title: record.title.slice(0, 60),
+          body: record.body.slice(0, 240),
+        },
+      ];
+    })
+    .slice(0, 3);
+}
+
+/**
+ * Market sentiment and desk briefing from the market-mood Edge Function. The
+ * function reads `market_indices` itself and calls Gemini, so the dashboard
+ * renders model output rather than copy written in this repo.
+ */
+export function useMarketMood() {
+  const query = useQuery({
+    queryKey: MARKET_MOOD_KEY,
+    enabled: isSupabaseConfigured,
+    queryFn: async (): Promise<MarketBriefing> => {
+      if (!supabase) throw new Error(SUPABASE_SETUP_MESSAGE);
+
+      const { data, error } = await supabase.functions.invoke("market-mood");
+      if (error) throw new Error(await readFunctionError(error, "market-mood"));
+
+      const payload = (data ?? {}) as MoodPayload;
+      if (payload.error) throw new Error(payload.error);
+
+      const source = payload.mood;
+      if (!source) throw new Error("The market-mood function returned no analysis.");
+
+      const sentiment =
+        typeof source.sentiment === "string" &&
+        SENTIMENTS.includes(source.sentiment as MarketMood["sentiment"])
+          ? (source.sentiment as MarketMood["sentiment"])
+          : null;
+      if (!sentiment) {
+        throw new Error(
+          "The market-mood function returned an unreadable sentiment.",
+        );
+      }
+      if (typeof source.headline !== "string" || !source.headline.trim()) {
+        throw new Error("The market-mood function returned an empty market read.");
+      }
+
+      const briefing = parseBriefing(payload.briefing);
+      if (briefing.length === 0) {
+        throw new Error("The market-mood function returned no briefing items.");
+      }
+
+      const generatedAt =
+        typeof source.generatedAt === "string" && source.generatedAt
+          ? source.generatedAt
+          : new Date().toISOString();
+
+      return {
+        mood: {
+          sentiment,
+          score: clampPercent(source.score, 50),
+          confidence: clampPercent(source.confidence, 50),
+          headline: source.headline.trim(),
+          drivers: parseDrivers(source.drivers),
+          updated: formatRelativeTime(generatedAt),
+        },
+        briefing,
+        generatedAt,
+      };
+    },
+    // One Gemini call per refresh window keeps cost predictable while a
+    // dashboard left open still picks up the next 15-minute sync.
+    staleTime: 10 * 60_000,
+    refetchInterval: 15 * 60_000,
+  });
+
+  const analysis = query.data ?? null;
+
+  return {
+    mood: analysis?.mood ?? null,
+    briefing: analysis?.briefing ?? [],
+    generatedAt: analysis?.generatedAt ?? null,
     isLoading: query.isLoading,
     error: query.error,
     refetch: query.refetch,

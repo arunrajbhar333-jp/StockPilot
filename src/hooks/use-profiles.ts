@@ -9,7 +9,7 @@ import type { ModuleKey, UserRole, WorkspaceUser } from "@/types/domain";
 
 const PROFILES_KEY = ["profiles"] as const;
 
-async function readFunctionError(
+export async function readFunctionError(
   error: unknown,
   functionName: string,
 ): Promise<string> {
