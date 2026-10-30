@@ -457,7 +457,7 @@ export function AppShell() {
         <header
           className={
             light
-              ? "sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8"
+              ? "sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200 bg-white px-4 text-slate-500 sm:px-6 lg:px-8"
               : "sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-white/[0.06] bg-background/60 px-4 backdrop-blur-xl sm:px-6 lg:px-8"
           }
         >
@@ -474,15 +474,25 @@ export function AppShell() {
             <BrandMark className="size-8" />
           </Link>
 
-          <div className="hidden h-7 w-px bg-white/[0.08] lg:block" />
+          <div
+            className={`hidden h-7 w-px lg:block ${light ? "bg-slate-200" : "bg-white/[0.08]"}`}
+          />
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 text-[10px] tracking-[0.16em] text-muted-foreground/60 uppercase">
-              <span className="hidden sm:inline">StockPilot</span>
-              <ChevronRight className="hidden size-3 sm:inline" />
-              <span className="text-muted-foreground">{title}</span>
+            <div
+              className={`flex items-center gap-1.5 text-[10px] tracking-[0.16em] uppercase ${light ? "text-slate-500" : "text-muted-foreground/60"}`}
+            >
+              <span className="hidden truncate sm:inline">StockPilot</span>
+              <ChevronRight className="hidden size-3 shrink-0 sm:inline" />
+              <span
+                className={`truncate ${light ? "font-medium text-slate-900" : "text-muted-foreground"}`}
+              >
+                {title}
+              </span>
             </div>
-            <p className="truncate text-[13px] font-medium text-foreground sm:hidden">
+            <p
+              className={`truncate text-[13px] font-medium sm:hidden ${light ? "text-slate-900" : "text-foreground"}`}
+            >
               {title}
             </p>
           </div>

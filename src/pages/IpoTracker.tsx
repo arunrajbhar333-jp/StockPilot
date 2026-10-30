@@ -3,6 +3,7 @@ import { Activity, CalendarClock, Sparkles, TrendingUp } from "lucide-react";
 import { IpoTable } from "@/components/ipo-table";
 import { PageHeader } from "@/components/page-header";
 import { useIpos } from "@/hooks/use-market-data";
+import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 const filters = [
@@ -15,12 +16,17 @@ type FilterKey = (typeof filters)[number]["key"];
 
 export default function IpoTracker() {
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [query, setQuery] = useState("");
+  const { theme } = useTheme();
   const { ipos, isLoading, error, refetch } = useIpos();
 
-  const visible = useMemo(
-    () => (filter === "all" ? ipos : ipos.filter((ipo) => ipo.type === filter)),
-    [filter, ipos],
-  );
+  const visible = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return ipos.filter((ipo) => {
+      if (filter !== "all" && ipo.type !== filter) return false;
+      return term === "" || ipo.company.toLowerCase().includes(term);
+    });
+  }, [filter, ipos, query]);
 
   const stats = useMemo(() => {
     const openNow = ipos.filter((ipo) => ipo.status !== "Upcoming").length;
@@ -119,22 +125,38 @@ export default function IpoTracker() {
             </p>
           </div>
 
-          <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.07] bg-black/25 p-1">
-            {filters.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setFilter(item.key)}
-                className={cn(
-                  "rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-all",
-                  filter === item.key
-                    ? "bg-primary/15 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {item.label}
-              </button>
-            ))}
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <input
+              type="text"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search company"
+              aria-label="Search IPOs by company name"
+              className={cn(
+                "w-full rounded-lg px-4 py-2 text-[12px] transition-colors outline-none sm:w-56",
+                theme === "light"
+                  ? "border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                  : "border border-slate-700 bg-slate-800 text-white placeholder:text-slate-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/25",
+              )}
+            />
+
+            <div className="flex items-center gap-1.5 self-start rounded-lg border border-white/[0.07] bg-black/25 p-1 sm:self-auto">
+              {filters.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setFilter(item.key)}
+                  className={cn(
+                    "rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-all",
+                    filter === item.key
+                      ? "bg-primary/15 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -157,7 +179,9 @@ export default function IpoTracker() {
           <p className="px-4 py-10 text-center text-[11px] text-muted-foreground sm:px-5">
             {ipos.length === 0
               ? "No issues have been published yet. Run the seed SQL or wait for the scraper."
-              : "No issues match this filter."}
+              : query.trim()
+                ? `No issues match “${query.trim()}”.`
+                : "No issues match this filter."}
           </p>
         ) : (
           <div className="pb-1">

@@ -583,6 +583,13 @@
   background-color: rgb(15 23 42 / 0.045);
 }
 
+/* `--color-white` is inverted in light mode, so a literal `bg-white` would paint
+   dark slate ink. Any component that asks for solid white (header, buttons,
+   inputs) gets real white here. */
+.light .bg-white {
+  background-color: #ffffff;
+}
+
 .light .text-white {
   color: #ffffff;
 }
