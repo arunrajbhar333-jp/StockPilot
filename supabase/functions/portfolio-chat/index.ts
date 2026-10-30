@@ -1,9 +1,10 @@
 // Supabase Edge Function: portfolio-chat
 //
-// The in-app "Ask AI" assistant. It loads the caller's holdings together with
-// the six-pillar deep analysis stored on each row, adds a live market snapshot
-// (crude, Nifty, S&P 500, USD/INR) and asks Gemini to answer one question in
-// clear Hinglish.
+// The in-app "Ask AI" assistant. It loads three context sets before asking
+// Gemini to answer one question in clear Hinglish:
+//   1. The caller's portfolio holdings (with stored AI analysis).
+//   2. The general market catalog (top 20 listings).
+//   3. Live/upcoming IPOs.
 //
 // Request:
 //   {
@@ -71,6 +72,32 @@ interface HoldingRow {
   ai_timeline: string | null;
   ai_breakdown: unknown;
   last_analyzed_at: string | null;
+}
+
+/** The shape the catalog query returns. The supabase-js types can drift, so
+ *  the Edge Function normalizes whatever the database sends into this shape
+ *  before passing it to Gemini.
+ */
+interface CatalogRow {
+  symbol: string | null;
+  stock_name: string | null;
+  current_price: number | string | null;
+  ai_verdict: string | null;
+  ai_reasoning: string | null;
+}
+
+/** The shape the IPO query returns. Column names differ across migrations, so
+ *  the function reads by name and normalizes before passing it to Gemini.
+ */
+interface IpoRow {
+  id: string | null;
+  company_name: string | null;
+  company: string | null;
+  type: string | null;
+  gmp: number | string | null;
+  subscription: number | string | null;
+  ai_score: number | string | null;
+  verdict: string | null;
 }
 
 interface Turn {
@@ -206,6 +233,50 @@ function portfolioLines(rows: HoldingRow[]): string[] {
   });
 }
 
+/** One line per market-catalog stock so the assistant can answer about names the
+ *  user does not hold.
+ */
+function catalogLines(rows: CatalogRow[]): string[] {
+  if (!rows.length) return ["(No market catalog rows returned.)"];
+
+  return rows.map((row) => {
+    const price = number(row.current_price);
+
+    return [
+      `- ${row.stock_name ?? row.symbol ?? "unknown"} (${row.symbol ?? "symbol n/a"})`,
+      `  price INR ${price.toFixed(2)}`,
+      `  verdict: ${row.ai_verdict ?? "not analysed"}`,
+      row.ai_reasoning ? `  why: ${row.ai_reasoning.slice(0, 240)}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  });
+}
+
+/** One line per IPO so the assistant can answer about fresh issues. */
+function ipoLines(rows: IpoRow[]): string[] {
+  if (!rows.length) return ["(No live/upcoming IPOs returned.)"];
+
+  return rows.map((row) => {
+    const gmp = number(row.gmp);
+    const subscription = number(row.subscription);
+    const score = number(row.ai_score);
+    const name =
+      row.company_name ||
+      row.company ||
+      `ipo-${row.id ?? "unknown"}`;
+    const type = row.type || "IPO";
+
+    return [
+      `- ${name} (${type})`,
+      `  gmp INR ${gmp.toFixed(0)} · subscription ${subscription.toFixed(1)}x`,
+      `  ai_score: ${score.toFixed(1)}/10 · verdict: ${row.verdict ?? "not analysed"}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -303,6 +374,35 @@ Deno.serve(async (req: Request) => {
 
   const rows = (holdings ?? []) as unknown as HoldingRow[];
 
+  // General market context: top 20 stocks from the live/upcoming catalog so the
+  // assistant can answer about names the user does not hold.
+  const { data: catalog, error: catalogError } = await admin
+    .from("market_catalog")
+    .select("symbol, stock_name, current_price, ai_verdict, ai_reasoning")
+    .order("current_price", { ascending: false, nullsFirst: false })
+    .limit(20);
+
+  if (catalogError) {
+    return json({ error: `Could not read the market catalog: ${catalogError.message}` }, 500);
+  }
+
+  const catalogRows = (catalog ?? []) as unknown as CatalogRow[];
+
+  // Live/upcoming IPOs: the assistant uses this when the member asks about a
+  // fresh issue. Column names vary across migrations, so the function picks the
+  // available Knockout columns by name.
+  const { data: ipos, error: iposError } = await admin
+    .from("ipos")
+    .select("id, company_name, company, type, gmp, subscription, ai_score, verdict")
+    .order("ai_score", { ascending: false, nullsFirst: false })
+    .limit(20);
+
+  if (iposError) {
+    return json({ error: `Could not read the IPOs: ${iposError.message}` }, 500);
+  }
+
+  const ipoRows = (ipos ?? []) as unknown as IpoRow[];
+
   const apiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
   if (!apiKey) {
     return json(
@@ -332,13 +432,21 @@ Deno.serve(async (req: Request) => {
   const prompt = [
     `A member has asked: "${message}"`,
     "",
+    "You are StockPilot AI. You have access to the user's portfolio, the general market catalog, and live IPOs. If the user asks about a stock not in their portfolio, look it up in the market_catalog data. If they ask about an IPO, look it up in the ipos data. Do NOT say you don't have data if it is provided below.",
+    "",
     "Their portfolio (fresh from Supabase):",
     ...portfolioLines(rows),
+    "",
+    "Market catalog (top 20):",
+    ...catalogLines(catalogRows),
+    "",
+    "Live IPOs:",
+    ...ipoLines(ipoRows),
     "",
     "Live market context:",
     snapshot,
     "",
-    "Answer in clear Hinglish (Roman script), 3-6 short sentences, the way a knowledgeable friend would: name the stock they asked about, tie the answer to India's macro or crude or global cues where that actually matters, give the action (BUY / HOLD / SELL), and finish with the stored verdict in the form (Verdict: HOLD). If a horizon matters, say how long to hold (jaise 3-6 mahine). Keep numbers, tickers and ratios in English. Never invent a price or a news event: if the data is not in the prompt, say the data nahi hai. Close with a one-line reminder that this is research, not investment advice.",
+    "Answer in clear Hinglish (Roman script), 3-6 short sentences, the way a knowledgeable friend would: name the stock or IPO they asked about, tie the answer to India's macro or crude or global cues where that actually matters, give the action (BUY / HOLD / SELL), and finish with the stored verdict in the form (Verdict: HOLD). If a horizon matters, say how long to hold (jaise 3-6 mahine). Keep numbers, tickers and ratios in English. Never invent a price or a news event: if the data is not in the prompt, say the data nahi hai. Close with a one-line reminder that this is research, not investment advice.",
   ].join("\n");
 
   let reply = "";
@@ -400,5 +508,10 @@ Deno.serve(async (req: Request) => {
     return json({ error: `The assistant could not be reached: ${detail}` }, 502);
   }
 
-  return json({ reply, holdings: rows.length });
+  return json({
+    reply,
+    holdings: rows.length,
+    catalogCount: catalogRows.length,
+    ipoCount: ipoRows.length,
+  });
 });
