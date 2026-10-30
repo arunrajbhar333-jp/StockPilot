@@ -101,9 +101,9 @@ export function useReanalyzeIpo() {
 }
 
 /**
- * Scores every pending issue one after another, refreshing the table after each
- * success so the tracker fills in as the run progresses. A failure is logged and
- * skipped; the caller reports the tally when the run settles.
+ * Scores each issue it is given one after another, refreshing the table after
+ * every success so the tracker fills in as the run progresses. A failure is
+ * logged and skipped; the caller reports the tally when the run settles.
  */
 export function useReanalyzeAllIpos() {
   const queryClient = useQueryClient();

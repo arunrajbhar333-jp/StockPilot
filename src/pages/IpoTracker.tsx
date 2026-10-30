@@ -3,6 +3,17 @@ import { Activity, CalendarClock, Loader2, Sparkles, TrendingUp } from "lucide-r
 import { toast } from "sonner";
 import { IpoTable } from "@/components/ipo-table";
 import { PageHeader } from "@/components/page-header";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { useReanalyzeAllIpos } from "@/hooks/use-ipo-actions";
 import { useIpos } from "@/hooks/use-market-data";
@@ -21,6 +32,7 @@ type FilterKey = (typeof filters)[number]["key"];
 export default function IpoTracker() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
+  const [confirmAnalyzeAll, setConfirmAnalyzeAll] = useState(false);
   const { theme } = useTheme();
   const { isAdmin } = useSession();
   const { ipos, isLoading, error, refetch } = useIpos();
@@ -34,13 +46,12 @@ export default function IpoTracker() {
   );
 
   const handleAnalyzeAll = () => {
-    // Re-read the cache at click time: realtime may have scored them already.
-    const targets = ipos
-      .filter((ipo) => ipo.aiScore === 0)
-      .map((ipo) => ({ id: ipo.id, company: ipo.company }));
+    // The whole tracked list, not just the unscored rows: this is the manual
+    // force-refresh for scores that look stale after a GMP or book update.
+    const targets = ipos.map((ipo) => ({ id: ipo.id, company: ipo.company }));
 
     if (targets.length === 0) {
-      toast.info("All IPOs are already analyzed.");
+      toast.info("There are no IPOs to re-analyze yet.");
       return;
     }
 
@@ -184,26 +195,58 @@ export default function IpoTracker() {
               )}
             />
 
-            {isAdmin && pendingIpos.length > 0 ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleAnalyzeAll}
-                disabled={analyzeAll.isPending}
-                aria-live="polite"
-                className="h-[34px] w-full justify-center gap-1.5 rounded-lg border-ai/35 bg-ai/10 px-3 text-[11px] font-medium text-ai hover:bg-ai/15 hover:text-ai sm:w-auto"
+            {isAdmin ? (
+              <AlertDialog
+                open={confirmAnalyzeAll}
+                onOpenChange={setConfirmAnalyzeAll}
               >
-                {analyzeAll.isPending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="size-3.5" />
-                )}
-                {analyzeAll.isPending
-                  ? analyzeAll.progress
-                    ? `Analyzing ${analyzeAll.progress.current} of ${analyzeAll.progress.total}…`
-                    : "Analyzing…"
-                  : `Analyze All Pending (${pendingIpos.length})`}
-              </Button>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={analyzeAll.isPending}
+                    aria-live="polite"
+                    className={cn(
+                      "h-[34px] w-full justify-center gap-1.5 rounded-lg px-3 text-[11px] font-medium sm:w-auto",
+                      // Unscored rows pull the eye; a fully graded table stays quiet.
+                      pendingIpos.length > 0
+                        ? "border-ai/35 bg-ai/10 text-ai hover:bg-ai/15 hover:text-ai"
+                        : theme === "light"
+                          ? "border border-slate-300 bg-white text-slate-600 hover:text-slate-900"
+                          : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {analyzeAll.isPending ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="size-3.5" />
+                    )}
+                    {analyzeAll.isPending
+                      ? analyzeAll.progress
+                        ? `Analyzing ${analyzeAll.progress.current} of ${analyzeAll.progress.total}…`
+                        : "Analyzing…"
+                      : `Re-Analyze All (${ipos.length})`}
+                  </Button>
+                </AlertDialogTrigger>
+
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      Re-analyze every tracked issue?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to re-analyze all {ipos.length} IPOs?
+                      This will use your Gemini API quota.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleAnalyzeAll}>
+                      Re-analyze {ipos.length}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             ) : null}
 
             <div className="flex items-center gap-1.5 self-start rounded-lg border border-white/[0.07] bg-black/25 p-1 sm:self-auto">
