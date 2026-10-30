@@ -1,8 +1,12 @@
 import { useMemo, useState } from "react";
-import { Activity, CalendarClock, Sparkles, TrendingUp } from "lucide-react";
+import { Activity, CalendarClock, Loader2, Sparkles, TrendingUp } from "lucide-react";
+import { toast } from "sonner";
 import { IpoTable } from "@/components/ipo-table";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { useReanalyzeAllIpos } from "@/hooks/use-ipo-actions";
 import { useIpos } from "@/hooks/use-market-data";
+import { useSession } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +22,47 @@ export default function IpoTracker() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
   const { theme } = useTheme();
+  const { isAdmin } = useSession();
   const { ipos, isLoading, error, refetch } = useIpos();
+  const analyzeAll = useReanalyzeAllIpos();
+
+  // Rows the scraper has not scored yet: analyze-ipo writes a real score into
+  // ai_score, so 0 marks "still pending" rather than "bad issue".
+  const pendingIpos = useMemo(
+    () => ipos.filter((ipo) => ipo.aiScore === 0),
+    [ipos],
+  );
+
+  const handleAnalyzeAll = () => {
+    // Re-read the cache at click time: realtime may have scored them already.
+    const targets = ipos
+      .filter((ipo) => ipo.aiScore === 0)
+      .map((ipo) => ({ id: ipo.id, company: ipo.company }));
+
+    if (targets.length === 0) {
+      toast.info("All IPOs are already analyzed.");
+      return;
+    }
+
+    analyzeAll.mutate(targets, {
+      onSuccess: (result) => {
+        if (result.failed === 0) {
+          toast.success(
+            `Successfully analyzed ${result.analyzed} IPO${result.analyzed === 1 ? "" : "s"}.`,
+          );
+          return;
+        }
+        toast.warning(`${result.analyzed} analyzed, ${result.failed} failed.`, {
+          description: `Still pending: ${result.failedCompanies.join(", ")}.`,
+        });
+      },
+      onError: (mutationError) => {
+        toast.error("Bulk analysis stopped", {
+          description: mutationError.message,
+        });
+      },
+    });
+  };
 
   const visible = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -139,6 +183,28 @@ export default function IpoTracker() {
                   : "border border-slate-700 bg-slate-800 text-white placeholder:text-slate-500 focus:border-primary/60 focus:ring-2 focus:ring-primary/25",
               )}
             />
+
+            {isAdmin && pendingIpos.length > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleAnalyzeAll}
+                disabled={analyzeAll.isPending}
+                aria-live="polite"
+                className="h-[34px] w-full justify-center gap-1.5 rounded-lg border-ai/35 bg-ai/10 px-3 text-[11px] font-medium text-ai hover:bg-ai/15 hover:text-ai sm:w-auto"
+              >
+                {analyzeAll.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3.5" />
+                )}
+                {analyzeAll.isPending
+                  ? analyzeAll.progress
+                    ? `Analyzing ${analyzeAll.progress.current} of ${analyzeAll.progress.total}…`
+                    : "Analyzing…"
+                  : `Analyze All Pending (${pendingIpos.length})`}
+              </Button>
+            ) : null}
 
             <div className="flex items-center gap-1.5 self-start rounded-lg border border-white/[0.07] bg-black/25 p-1 sm:self-auto">
               {filters.map((item) => (
