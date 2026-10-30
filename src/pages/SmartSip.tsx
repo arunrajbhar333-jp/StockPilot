@@ -49,7 +49,7 @@ export default function SmartSip() {
         description="Gemini screens the fund universe for cost, drawdown behaviour and rolling returns, then issues a start-or-wait verdict."
         actions={
           <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
-            <Sparkles className="size-3 text-ai" />
+            <Sparkles className="size-3 shrink-0 text-amber-500" strokeWidth={1.5} />
             {startFunds.length} of {sips.length} funds cleared to start
           </span>
         }
@@ -254,7 +254,10 @@ export default function SmartSip() {
             </div>
 
             <p className="mt-5 flex items-start gap-1.5 text-[10px] leading-relaxed text-muted-foreground/70">
-              <Sparkles className="mt-0.5 size-2.5 shrink-0 text-ai" />
+              <Sparkles
+              className="mt-0.5 size-2.5 shrink-0 text-amber-500"
+              strokeWidth={1.5}
+            />
               {startFunds.length > 0
                 ? `Blend of ${startFunds
                     .map((fund) => fund.fund)

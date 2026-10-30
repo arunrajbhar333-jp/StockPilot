@@ -64,12 +64,15 @@ function ReanalyzeButton({ ipo }: { ipo: Ipo }) {
           },
         )
       }
-      className="h-6 gap-1 rounded-md px-1.5 text-[10px] font-medium text-ai hover:bg-ai/10 hover:text-ai"
+      className="group h-6 gap-1 rounded-md px-1.5 text-[10px] font-medium text-amber-500 hover:bg-amber-500/10 hover:text-amber-500"
     >
       {reanalyze.isPending ? (
-        <Loader2 className="size-3 animate-spin" />
+        <Loader2 className="size-3 shrink-0 animate-spin" strokeWidth={1.5} />
       ) : (
-        <Sparkles className="size-3" />
+        <Sparkles
+          className="size-3 shrink-0 transition-transform duration-200 group-hover:-translate-y-0.5"
+          strokeWidth={1.5}
+        />
       )}
       {reanalyze.isPending ? "Scoring…" : "Re-analyze"}
     </Button>
@@ -216,17 +219,20 @@ export function IpoTable({
                         variant="outline"
                         disabled={!schedule.canApply}
                         onClick={() => setSelected(ipo)}
-                        className={cn(
-                          "h-8 gap-1 rounded-lg px-2.5 text-[11px] font-medium whitespace-nowrap",
-                          schedule.canApply
-                            ? "border-primary/25 bg-primary/[0.08] text-primary hover:bg-primary/15 hover:text-primary"
-                            : "border-border bg-muted/30 text-muted-foreground",
-                        )}
-                      >
-                        {schedule.applyLabel}
-                        {schedule.canApply ? (
-                          <ArrowUpRight className="size-3" />
-                        ) : null}
+                      className={cn(
+                        "group h-8 gap-1 rounded-lg px-2.5 text-[11px] font-medium whitespace-nowrap",
+                        schedule.canApply
+                          ? "border-primary/25 bg-primary/[0.08] text-primary hover:bg-primary/15 hover:text-primary"
+                          : "border-border bg-muted/30 text-muted-foreground",
+                      )}
+                    >
+                      {schedule.applyLabel}
+                      {schedule.canApply ? (
+                        <ArrowUpRight
+                          className="size-3 shrink-0 text-emerald-500 transition-transform duration-200 group-hover:-translate-y-0.5"
+                          strokeWidth={1.5}
+                        />
+                      ) : null}
                       </Button>
                       {isAdmin && ipo.aiScore === 0 ? (
                         <ReanalyzeButton ipo={ipo} />

@@ -7,6 +7,16 @@ refresh the AI verdict for positions that moved significantly. Every IPO it
 inserts is immediately handed to analyze-ipo, which grades the issue with
 Gemini and stores the score, verdict and underwriting note on the row.
 
+Alerts go out through the send-telegram-alert Edge Function (Hinglish copy,
+one bot token held server-side):
+  * IPO T-1 — an issue opening tomorrow, sent once per issue.
+  * IPO T-10 — an issue opening today, sent between 09:50 and 09:59 IST only.
+  * Portfolio — only when a holding's verdict changes after a >1.5% move.
+  * New buy — a watchlist stock in market_catalog turning STRONG BUY that the
+    member does not already own.
+Every alert is gated by a stored flag or a verdict comparison, so a run that
+finds nothing new sends nothing. All timing is IST.
+
 IPO data comes from NSE first. NSE blocks most datacenter IPs (GitHub Actions
 routinely gets 401/403 or an empty payload), so when it returns no usable
 issues the scraper falls back to IPOWatch's public pages, which also carry the
@@ -19,6 +29,7 @@ Run:
 Environment (see scraper/README.md):
     SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
     AI_TRIGGER_PCT (default 1.5), AI_MAX_ANALYSES (default 20)
+    TELEGRAM_ALERTS (default on; set to 0 to keep alerts dark)
     IPO_GMP_API_URL / IPO_GMP_API_KEY (optional; NSE does not publish GMP)
 
 Only the service role key can write these tables, so this script must run in a
@@ -35,8 +46,8 @@ import re
 import sys
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime, time as time_of_day, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -94,6 +105,8 @@ class Config:
     ipo_ai_sub_delta: float = 0.5
     gmp_api_url: str | None = None
     gmp_api_key: str | None = None
+    # Telegram delivery switch. Off means: log the alert, change no flags.
+    telegram_alerts: bool = True
     dry_run: bool = False
     skip_ai: bool = False
 
@@ -138,6 +151,8 @@ def config_from_env(dry_run: bool, skip_ai: bool) -> Config:
         ipo_ai_sub_delta=_env_number("IPO_AI_SUB_DELTA", 0.5),
         gmp_api_url=(os.getenv("IPO_GMP_API_URL") or "").strip() or None,
         gmp_api_key=(os.getenv("IPO_GMP_API_KEY") or "").strip() or None,
+        telegram_alerts=(os.getenv("TELEGRAM_ALERTS") or "true").strip().lower()
+        not in {"0", "false", "no", "off"},
         dry_run=dry_run,
         skip_ai=skip_ai,
     )
@@ -200,12 +215,46 @@ def parse_price_band(value: Any) -> tuple[float | None, float | None]:
     return (None, None)
 
 
+def parse_lot_size(value: Any) -> int | None:
+    """"1,560" or "1560" -> 1560 shares per lot; junk -> None."""
+    number = to_float(value)
+    if not number or number < 1:
+        return None
+    return int(number)
+
+
 def derive_status(open_date: date | None, close_date: date | None, today: date) -> str:
     if open_date and today < open_date:
         return "Upcoming"
     if close_date and today == close_date:
         return "Closing today"
     return "Open"
+
+
+def parse_iso_date(value: Any) -> date | None:
+    """"2026-11-02" or "2026-11-02T00:00:00+00:00" -> date, else None."""
+    if not value:
+        return None
+    text = str(value).strip()[:10]
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def inr(value: float) -> str:
+    """Indian digit grouping: 150000 -> ₹1,50,000."""
+    amount = str(round(value))
+    if len(amount) > 3:
+        head, tail = amount[:-3], amount[-3:]
+        groups: list[str] = []
+        while len(head) > 2:
+            head, group = head[:-2], head[-2:]
+            groups.append(group)
+        if head:
+            groups.append(head)
+        amount = ",".join(reversed(groups)) + "," + tail
+    return f"₹{amount}"
 
 
 # --------------------------------------------------------------------------- #
@@ -369,6 +418,8 @@ class LiveIpo:
     # on the optional IPO_GMP_API_URL feed instead.
     gmp: float | None = None
     issue_size: str | None = None
+    # Shares per lot. The T-1 / T-10 alerts price one lot from this.
+    lot_size: int | None = None
 
     @property
     def issue_type(self) -> str:
@@ -403,11 +454,13 @@ def fetch_live_ipos(session: requests.Session, config: Config) -> list[LiveIpo]:
 
         status = derive_status(open_date, close_date, today)
 
-        # Upcoming books have no subscription yet; skip the extra request.
-        subscription = None
-        if status != "Upcoming":
-            subscription = fetch_ipo_subscription(session, symbol, config)
-            time.sleep(0.25)
+        # One detail request carries both the live subscription book and the
+        # lot size. The lot size matters even before the book opens, because
+        # the T-1 alert has to price one lot for the member.
+        subscription, lot_size = fetch_ipo_detail(session, symbol, config)
+        if status == "Upcoming":
+            subscription = None
+        time.sleep(0.25)
 
         issues.append(
             LiveIpo(
@@ -420,6 +473,7 @@ def fetch_live_ipos(session: requests.Session, config: Config) -> list[LiveIpo]:
                 price_high=price_high,
                 subscription=subscription,
                 status=status,
+                lot_size=lot_size,
             )
         )
 
@@ -431,33 +485,47 @@ def fetch_live_ipos(session: requests.Session, config: Config) -> list[LiveIpo]:
     return issues
 
 
-def fetch_ipo_subscription(
+def fetch_ipo_detail(
     session: requests.Session, symbol: str, config: Config
-) -> float | None:
+) -> tuple[float | None, int | None]:
+    """Subscription book and lot size from one NSE detail request."""
     payload = nse_get_json(
         session,
         NSE_DETAIL.format(symbol=quote(symbol, safe="")),
         config.request_timeout,
     )
     if not isinstance(payload, dict):
-        return None
+        return (None, None)
 
+    subscription: float | None = None
     combined = (payload.get("demandGraphALL") or {}).get("noOfTimesIssueSubscribed")
     value = to_float(combined)
     if value is not None:
-        return round(value, 2)
+        subscription = round(value, 2)
+    else:
+        nse_only = (payload.get("demandGraph") or {}).get("noOfTimesIssueSubscribed")
+        value = to_float(nse_only)
+        if value is not None:
+            subscription = round(value, 2)
+        else:
+            rows = (payload.get("activeCat") or {}).get("dataList") or []
+            for row in rows:
+                if (
+                    isinstance(row, dict)
+                    and str(row.get("category", "")).strip().lower() == "total"
+                ):
+                    total = to_float(row.get("noOfTotalMeant"))
+                    if total is not None:
+                        subscription = round(total, 2)
+                    break
 
-    nse_only = (payload.get("demandGraph") or {}).get("noOfTimesIssueSubscribed")
-    value = to_float(nse_only)
-    if value is not None:
-        return round(value, 2)
+    lot_size = None
+    for key in ("lotSize", "minLotSize", "lotsize"):
+        lot_size = parse_lot_size(payload.get(key))
+        if lot_size:
+            break
 
-    rows = (payload.get("activeCat") or {}).get("dataList") or []
-    for row in rows:
-        if isinstance(row, dict) and str(row.get("category", "")).strip().lower() == "total":
-            total = to_float(row.get("noOfTotalMeant"))
-            return round(total, 2) if total is not None else None
-    return None
+    return (subscription, lot_size)
 
 
 # --------------------------------------------------------------------------- #
@@ -617,6 +685,7 @@ def parse_ipowatch_upcoming(
 
         size_col = column_index(headers, "ipo size")
         platform_col = column_index(headers, "platform")
+        lot_col = column_index(headers, "lot size", "lot")
 
         for row in table[1:]:
             if len(row) <= max(name_col, date_col, band_col):
@@ -645,6 +714,11 @@ def parse_ipowatch_upcoming(
                     "price_low": price_low,
                     "price_high": price_high,
                     "issue_size": (row[size_col].strip() if size_col is not None and len(row) > size_col else None) or None,
+                "lot_size": (
+                    parse_lot_size(row[lot_col])
+                    if lot_col is not None and len(row) > lot_col
+                    else None
+                ),
                 }
             )
 
@@ -784,6 +858,7 @@ def fetch_ipowatch(config: Config) -> tuple[list[LiveIpo], dict[str, float]]:
                 status=status,
                 gmp=gmp,
                 issue_size=record["issue_size"],
+                lot_size=record.get("lot_size"),
             )
         )
 
@@ -1162,6 +1237,8 @@ def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
             patch["price_band_high"] = issue.price_high
         if issue.issue_size:
             patch["issue_size"] = issue.issue_size
+        if issue.lot_size:
+            patch["lot_size"] = int(issue.lot_size)
 
         # A configured GMP provider wins; otherwise use the premium IPOWatch
         # publishes, and only then leave the stored value alone.
@@ -1359,7 +1436,13 @@ def sync_portfolio(client: Client, config: Config) -> dict[str, Any]:
 
     if not rows:
         LOG.info("No portfolio holdings to update.")
-        return {"rows": 0, "symbols": 0, "missing": 0, "analyses": 0}
+        return {
+            "rows": 0,
+            "symbols": 0,
+            "missing": 0,
+            "analyses": 0,
+            "alerts": 0,
+        }
 
     # Group by upper-case symbol for quoting, but write by row id so mixed-case
     # spellings of the same ticker are all updated.
@@ -1424,6 +1507,7 @@ def sync_portfolio(client: Client, config: Config) -> dict[str, Any]:
     )
 
     analyses = 0
+    alert_count = 0
     if config.skip_ai:
         LOG.info("AI refresh skipped (--skip-ai).")
     elif triggers:
@@ -1444,7 +1528,13 @@ def sync_portfolio(client: Client, config: Config) -> dict[str, Any]:
                     "first review" if change_pct is None else f"{change_pct:+.2f}%",
                 )
                 continue
-            analyses += request_analysis(config, holding_id, symbol, change_pct)
+            if request_analysis(config, holding_id, symbol, change_pct):
+                analyses += 1
+                # The verdict may have just moved; that is the only thing worth
+                # messaging the member about.
+                alert_count += check_portfolio_alert(
+                    client, config, holding_id, change_pct
+                )
             time.sleep(max(0.0, config.ai_delay_seconds))
     else:
         LOG.info("AI refresh: no holding moved %.2f%% or more.", config.ai_trigger_pct)
@@ -1454,6 +1544,7 @@ def sync_portfolio(client: Client, config: Config) -> dict[str, Any]:
         "symbols": len(groups),
         "missing": missing,
         "analyses": analyses,
+        "alerts": alert_count,
     }
 
 
@@ -1508,6 +1599,467 @@ def request_analysis(
 # --------------------------------------------------------------------------- #
 
 
+# --------------------------------------------------------------------------- #
+# Telegram alerts (Hinglish)
+# --------------------------------------------------------------------------- #
+
+
+def send_telegram(
+    config: Config, message: str, label: str, chat_id: str | None = None
+) -> bool:
+    """Post one alert through the send-telegram-alert Edge Function.
+
+    Returns True only when Telegram accepted the message. Failures and switches
+    are reported but never raise: an alert problem must not stop a market sync,
+    and a message that did not go out is never marked as delivered.
+    """
+    if config.dry_run:
+        LOG.info("[dry-run] %s alert not sent:\n%s", label, message)
+        return False
+
+    if not config.telegram_alerts:
+        LOG.info("%s alert held (TELEGRAM_ALERTS is off).", label)
+        return False
+
+    url = f"{config.supabase_url}/functions/v1/send-telegram-alert"
+    headers = {
+        "Authorization": f"Bearer {config.service_role_key}",
+        "apikey": config.service_role_key,
+        "Content-Type": "application/json",
+    }
+    payload: dict[str, Any] = {"message": message}
+    if chat_id:
+        payload["chat_id"] = chat_id
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+    except requests.RequestException as error:
+        LOG.warning("%s alert not sent: %s", label, error)
+        return False
+
+    if response.status_code >= 400:
+        LOG.warning(
+            "%s alert returned %s: %s",
+            label,
+            response.status_code,
+            response.text[:200].replace("\n", " "),
+        )
+        return False
+
+    LOG.info("%s alert delivered.", label)
+    return True
+
+
+def _num(value: Any, digits: int = 2) -> str:
+    """Compact number for a message: 12.50 -> "12.5", missing -> "—"."""
+    number = to_float(value)
+    if number is None:
+        return "—"
+    text = f"{number:.{digits}f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def ipo_min_investment(row: dict[str, Any]) -> float | None:
+    """1 lot at the top of the band: lot_size * price_band_high."""
+    lot_size = to_float(row.get("lot_size"))
+    band_high = to_float(row.get("price_band_high"))
+    if not lot_size or not band_high:
+        return None
+    return lot_size * band_high
+
+
+def build_ipo_t1_message(row: dict[str, Any]) -> str:
+    lines = [
+        "🚨 *Kal Naya IPO Aa Raha Hai!* 🚨",
+        f"🏢 *Company:* {row.get('company_name')} ({row.get('type')})",
+    ]
+    minimum = ipo_min_investment(row)
+    if minimum is not None:
+        lines.append(f"💰 *1 Lot ka Kharcha:* {inr(minimum)}")
+    lines.extend(
+        [
+            f"📈 *GMP:* {_num(row.get('gmp'))} ({_num(row.get('gmp_pct'), 1)}%)",
+            f"🤖 *AI Score:* {_num(row.get('ai_score'), 1)}/10",
+            f"🎯 *Verdict:* {row.get('verdict') or 'WATCH'}",
+        ]
+    )
+    reasoning = str(row.get("thesis") or "").strip()
+    if reasoning:
+        lines.append(f"📝 *AI Analysis:* {reasoning}")
+    lines.append("👉 *Action:* Kal subah 10 baje apply karna shuru hoga. Taiyar raho!")
+    return "\n".join(lines)
+
+
+def build_ipo_t10_message(row: dict[str, Any]) -> str:
+    lines = [
+        "⏰ *Reminder: IPO 10 Minute Mein Khulne Wala Hai!* ⏰",
+        f"🏢 *Company:* {row.get('company_name')}",
+    ]
+    minimum = ipo_min_investment(row)
+    if minimum is not None:
+        lines.append(f"💰 *1 Lot ka Kharcha:* {inr(minimum)}")
+    lines.extend(
+        [
+            f"📈 *Current GMP:* {_num(row.get('gmp'))}",
+            f"🤖 *AI Score:* {_num(row.get('ai_score'), 1)}/10",
+            "👉 *Action:* Apna Zerodha/Groww app kholo aur turant apply karo!",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def send_ipo_alerts(client: Client, config: Config) -> dict[str, int]:
+    """T-1 and T-10 minute reminders for issues that are about to open.
+
+    T-1 fires when open_date is tomorrow. T-10 fires only inside the
+    09:50-09:59 IST window on the opening day itself. Each issue is flagged in
+    the table the moment Telegram accepts the message, so no alert repeats.
+    """
+    counts = {"t1": 0, "t10": 0}
+
+    rows = (
+        client.table("ipos")
+        .select(
+            "id, company_name, type, lot_size, price_band_high, gmp, gmp_pct, "
+            "ai_score, verdict, thesis, open_date, notified_1day, notified_10min"
+        )
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        LOG.info("No IPO rows to alert on.")
+        return counts
+
+    current = now_ist()
+    today = current.date()
+    in_ten_minute_window = time_of_day(9, 50) <= current.time() <= time_of_day(9, 59)
+
+    for row in rows:
+        open_date = parse_iso_date(row.get("open_date"))
+        if open_date is None:
+            continue
+
+        # Which alerts this row is due for, if any. send_telegram decides
+        # whether anything actually goes out (dry-run and TELEGRAM_ALERTS both
+        # return False), so a flag is only ever written for a delivered message.
+        due: list[tuple[str, str, str]] = []
+        if open_date == today + timedelta(days=1) and not row.get("notified_1day"):
+            due.append(("IPO T-1", build_ipo_t1_message(row), "notified_1day"))
+        if (
+            open_date == today
+            and in_ten_minute_window
+            and not row.get("notified_10min")
+        ):
+            due.append(("IPO T-10", build_ipo_t10_message(row), "notified_10min"))
+
+        for label, message, flag in due:
+            if send_telegram(config, message, label):
+                counts["t10" if flag == "notified_10min" else "t1"] += 1
+                client.table("ipos").update({flag: True}).eq(
+                    "id", row["id"]
+                ).execute()
+
+    if counts["t1"] or counts["t10"]:
+        LOG.info("IPO alerts: %s T-1, %s T-10 sent.", counts["t1"], counts["t10"])
+    else:
+        LOG.debug("IPO alerts: nothing new to send.")
+    return counts
+
+
+def build_portfolio_alert(row: dict[str, Any], change_pct: float | None) -> str:
+    current_price = to_float(row.get("current_price")) or 0.0
+    buy_price = to_float(row.get("buy_price")) or 0.0
+    verdict = str(row.get("ai_verdict") or "HOLD")
+
+    pnl = (
+        f"{(current_price - buy_price) / buy_price * 100:+.2f}%"
+        if buy_price > 0
+        else None
+    )
+    confidence = row.get("confidence")
+    reasoning = str(row.get("ai_reasoning") or "").strip()
+    selling = verdict in {"SELL", "STRONG SELL"}
+
+    lines = [f"🚨 *Portfolio Alert: {row.get('stock_name')}* 🚨"]
+    price_line = f"💸 *Current Price:* {inr(current_price)}"
+    if pnl:
+        price_line += f" (P&L: {pnl})"
+    lines.append(price_line)
+    verdict_line = f"🤖 *AI Verdict:* {verdict}"
+    if confidence is not None:
+        verdict_line += f" (Confidence: {_num(confidence, 0)}%)"
+    lines.append(verdict_line)
+    if reasoning:
+        lines.append(f"📉 *Reason:* {reasoning}")
+    lines.append(
+        "👉 *Action:* "
+        + (
+            "Aaj hi bech do, aage loss ho sakta hai."
+            if selling
+            else "Hold karke rakho, abhi tension ki baat nahi hai."
+        )
+    )
+    if change_pct is not None:
+        lines.append(f"📊 *Move today:* {change_pct:+.2f}%")
+    return "\n".join(lines)
+
+
+def check_portfolio_alert(
+    client: Client, config: Config, holding_id: str, change_pct: float | None
+) -> int:
+    """Message the member only when the verdict actually changed.
+
+    last_ai_verdict is the verdict they were last told about, so a 1.5% wiggle
+    that leaves the call alone sends nothing. Returns 1 when a message went out.
+    """
+    rows = (
+        client.table("portfolio")
+        .select(
+            "id, stock_name, buy_price, current_price, ai_verdict, ai_reasoning, "
+            "confidence, last_ai_verdict"
+        )
+        .eq("id", holding_id)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        return 0
+
+    row = rows[0]
+    verdict = str(row.get("ai_verdict") or "")
+    previous = row.get("last_ai_verdict")
+
+    if previous == verdict:
+        return 0
+
+    # First sighting of this holding: record the baseline instead of alarming.
+    if previous is None:
+        if not config.dry_run:
+            client.table("portfolio").update({"last_ai_verdict": verdict}).eq(
+                "id", holding_id
+            ).execute()
+        return 0
+
+    LOG.info(
+        "%s verdict changed: %s -> %s%s",
+        row.get("stock_name"),
+        previous,
+        verdict,
+        "" if change_pct is None else f" after {change_pct:+.2f}%",
+    )
+
+    delivered = send_telegram(
+        config, build_portfolio_alert(row, change_pct), "Portfolio"
+    )
+
+    # Either the message went out, or alerts are switched off and the change is
+    # recorded silently so enabling them later does not replay old verdicts.
+    if (delivered or not config.telegram_alerts) and not config.dry_run:
+        client.table("portfolio").update({"last_ai_verdict": verdict}).eq(
+            "id", holding_id
+        ).execute()
+
+    return 1 if delivered else 0
+
+
+def build_new_buy_alert(row: dict[str, Any]) -> str:
+    reasoning = str(row.get("ai_reasoning") or "").strip()
+    lines = [
+        f"💎 *New Stock Opportunity: {row.get('stock_name')}* 💎",
+        f"💰 *Current Price:* {inr(to_float(row.get('current_price')) or 0.0)}",
+        "🤖 *AI Verdict:* STRONG BUY",
+    ]
+    if reasoning:
+        lines.append(f"📈 *Reason:* {reasoning}")
+    lines.append("👉 *Action:* Aaj hi khareedo, aage accha profit mil sakta hai.")
+    return "\n".join(lines)
+
+
+def request_catalog_analysis(config: Config, stock_id: str, name: str) -> int:
+    """Ask analyze-holding (stockId mode) to grade one catalogue row."""
+    url = f"{config.supabase_url}/functions/v1/analyze-holding"
+    headers = {
+        "Authorization": f"Bearer {config.service_role_key}",
+        "apikey": config.service_role_key,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            url, headers=headers, json={"stockId": stock_id}, timeout=90
+        )
+    except requests.RequestException as error:
+        LOG.warning("Catalogue AI call failed for %s: %s", name, error)
+        return 0
+
+    if response.status_code >= 400:
+        LOG.warning(
+            "Catalogue AI call for %s returned %s: %s",
+            name,
+            response.status_code,
+            response.text[:200].replace("\n", " "),
+        )
+        return 0
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    if payload.get("skipped"):
+        LOG.warning("Catalogue AI call for %s skipped: %s", name, payload.get("reason"))
+        return 0
+
+    LOG.info("%s graded: %s (%s)", name, payload.get("verdict", "?"), payload.get("source", "?"))
+    return 1
+
+
+def detect_new_buy(
+    client: Client,
+    config: Config,
+    stock_id: str,
+    previous_verdict: str | None,
+    owned: set[str],
+) -> int:
+    """Alert once when a watchlist stock turns STRONG BUY and is not owned."""
+    if previous_verdict == "STRONG BUY":
+        return 0
+
+    rows = (
+        client.table("market_catalog")
+        .select(
+            "id, symbol, stock_name, current_price, ai_verdict, ai_reasoning, ai_source"
+        )
+        .eq("id", stock_id)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        return 0
+
+    row = rows[0]
+    if row.get("ai_verdict") != "STRONG BUY":
+        return 0
+    # A placeholder verdict is a stand-in, not a call: never alert on one.
+    if row.get("ai_source") != "gemini":
+        return 0
+    if str(row.get("symbol") or "").strip().upper() in owned:
+        return 0
+
+    return 1 if send_telegram(config, build_new_buy_alert(row), "New buy") else 0
+
+
+def sync_market_catalog(client: Client, config: Config) -> dict[str, Any]:
+    """Price the watchlist, re-grade the movers, alert on a new STRONG BUY.
+
+    Verdicts come from analyze-holding in stockId mode. Only rows that moved
+    AI_TRIGGER_PCT or have never been graded are sent for analysis, capped at
+    AI_MAX_ANALYSES per run so one sync cannot spend the whole quota.
+    """
+    rows = (
+        client.table("market_catalog")
+        .select(
+            "id, symbol, stock_name, current_price, ai_verdict, last_analyzed_at"
+        )
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        LOG.info("market_catalog is empty; nothing to price or grade.")
+        return {"rows": 0, "priced": 0, "analyses": 0, "alerts": 0}
+
+    owned = {
+        str(item.get("symbol") or "").strip().upper()
+        for item in (client.table("portfolio").select("symbol").execute().data or [])
+    }
+    owned.discard("")
+
+    session = yahoo_session()
+    priced = 0
+    missing = 0
+    previous: dict[str, str | None] = {}
+    triggers: list[tuple[float, dict[str, Any]]] = []
+
+    for row in rows:
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        previous[str(row["id"])] = row.get("ai_verdict")
+
+        quote_value = resolve_equity_quote(session, symbol, config.request_timeout)
+        if not quote_value:
+            missing += 1
+            LOG.warning("No quote for catalogue symbol %s.", symbol)
+            continue
+
+        price = quote_value.price
+        if not config.dry_run:
+            client.table("market_catalog").update({"current_price": price}).eq(
+                "id", row["id"]
+            ).execute()
+        priced += 1
+
+        old_price = to_float(row.get("current_price")) or 0.0
+        change_pct = (price - old_price) / old_price * 100 if old_price > 0 else None
+        stale = not row.get("last_analyzed_at")
+
+        if stale or change_pct is None or abs(change_pct) >= config.ai_trigger_pct:
+            triggers.append(
+                (abs(change_pct) if change_pct is not None else 0.0, row)
+            )
+        time.sleep(0.2)
+
+    analyses = 0
+    alerts = 0
+    if config.skip_ai:
+        LOG.info("Catalogue AI refresh skipped (--skip-ai).")
+    elif triggers:
+        triggers.sort(key=lambda item: item[0], reverse=True)
+        selected = triggers[: max(0, config.ai_max_analyses)]
+        LOG.info(
+            "Catalogue AI refresh: %s of %s stock(s) moved %.2f%% or never graded; analysing %s.",
+            len(triggers),
+            len(rows),
+            config.ai_trigger_pct,
+            len(selected),
+        )
+        for _, row in selected:
+            stock_id = str(row["id"])
+            name = str(row.get("stock_name") or row.get("symbol") or "catalogue stock")
+            if config.dry_run:
+                LOG.info("[dry-run] would analyse catalogue stock %s.", name)
+                continue
+            if request_catalog_analysis(config, stock_id, name):
+                analyses += 1
+                alerts += detect_new_buy(
+                    client, config, stock_id, previous.get(stock_id), owned
+                )
+            time.sleep(max(0.0, config.ai_delay_seconds))
+    else:
+        LOG.info(
+            "Catalogue AI refresh: no stock moved %.2f%% or more.",
+            config.ai_trigger_pct,
+        )
+
+    LOG.info(
+        "Catalogue sync: %s priced, %s unquoted, %s graded, %s alert(s).",
+        priced,
+        missing,
+        analyses,
+        alerts,
+    )
+    return {
+        "rows": len(rows),
+        "priced": priced,
+        "analyses": analyses,
+        "alerts": alerts,
+    }
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync StockPilot market data from public feeds.")
     parser.add_argument(
@@ -1538,6 +2090,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Skip the index snapshot for this run.",
     )
+    parser.add_argument(
+        "--skip-alerts",
+        action="store_true",
+        help=(
+            "Hold every Telegram alert for this run. Nothing is sent and no "
+            "notification flag is marked, so the alerts still fire later."
+        ),
+    )
     parser.add_argument("--verbose", action="store_true", help="Debug logging.")
     return parser.parse_args(argv)
 
@@ -1556,6 +2116,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         config = config_from_env(dry_run=args.dry_run, skip_ai=args.skip_ai)
+        if args.skip_alerts:
+            config = replace(config, telegram_alerts=False)
         client = create_client(config.supabase_url, config.service_role_key)
     except SystemExit:
         raise
@@ -1572,25 +2134,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     indices_written = 0
     ipo_counts = (0, 0)
     portfolio_summary = {"rows": 0, "symbols": 0, "missing": 0, "analyses": 0}
+    catalog_summary = {"rows": 0, "priced": 0, "analyses": 0, "alerts": 0}
+    alerts_sent = 0
 
     try:
         if not args.skip_indices:
             indices_written = sync_indices(client, config)
         if not args.skip_ipos:
             ipo_counts = sync_ipos(client, config)
+            alerts_sent += sum(send_ipo_alerts(client, config).values())
         if args.rescore_ipos:
             if config.skip_ai:
                 LOG.info("IPO rescore skipped (--skip-ai).")
             else:
                 rescore_ipos(client, config)
         portfolio_summary = sync_portfolio(client, config)
+        alerts_sent += int(portfolio_summary.get("alerts", 0))
+        catalog_summary = sync_market_catalog(client, config)
+        alerts_sent += int(catalog_summary.get("alerts", 0))
     except Exception:
         LOG.exception("Market sync aborted.")
         return 1
 
     LOG.info(
         "Done in %.1fs | indices %s | IPOs %s written / %s skipped | "
-        "portfolio %s rows, %s symbols, %s unquoted | AI %s",
+        "portfolio %s rows, %s symbols, %s unquoted | AI %s | "
+        "catalogue %s priced / %s graded | Telegram alerts %s",
         time.monotonic() - started,
         indices_written,
         ipo_counts[0],
@@ -1599,6 +2168,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         portfolio_summary["symbols"],
         portfolio_summary["missing"],
         portfolio_summary["analyses"],
+        catalog_summary["priced"],
+        catalog_summary["analyses"],
+        alerts_sent,
     )
     return 0
 

@@ -109,9 +109,12 @@ function DeleteHoldingButton({
       onClick={onClick}
       aria-label={`Delete ${stock}`}
       title={`Delete ${stock}`}
-      className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-negative/15 hover:text-negative"
+      className="size-7 shrink-0 rounded-md text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:bg-negative/15 hover:text-negative"
     >
-      <Trash2 className="size-3.5" />
+      <Trash2
+        className="size-3.5 shrink-0 text-red-500"
+        strokeWidth={1.5}
+      />
     </Button>
   );
 }
@@ -169,7 +172,7 @@ export default function Portfolio() {
         actions={
           <>
             <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
-              <Sparkles className="size-3 text-ai" />
+              <Sparkles className="size-3 shrink-0 text-amber-500" strokeWidth={1.5} />
               AI review · latest close
             </span>
             <Button
@@ -294,7 +297,10 @@ export default function Portfolio() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-ai/25 bg-ai/10">
-              <Sparkles className="size-3.5 text-ai" />
+              <Sparkles
+                className="size-3.5 shrink-0 text-amber-500"
+                strokeWidth={1.5}
+              />
             </span>
             <div>
               <p className="text-[11px] font-medium text-foreground">

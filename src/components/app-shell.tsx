@@ -158,16 +158,23 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                     {isActive ? (
                       <span className="absolute top-1/2 left-0 h-5 w-[2px] -translate-y-1/2 rounded-r bg-primary" />
                     ) : null}
-                    <Icon
+                    <span
                       className={cn(
-                        "size-[18px] shrink-0 transition-colors",
+                        "grid size-7 shrink-0 place-items-center rounded-md transition-all duration-200 group-hover:scale-110",
                         isActive
-                          ? "text-primary"
+                          ? light
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-primary/10 text-primary shadow-[0_0_14px_-6px_var(--color-primary)]"
                           : light
                             ? "text-slate-500 group-hover:text-slate-900"
                             : "text-muted-foreground/70 group-hover:text-foreground",
                       )}
-                    />
+                    >
+                      <Icon
+                        className="size-[18px] shrink-0"
+                        strokeWidth={1.75}
+                      />
+                    </span>
                     <span className="truncate">{item.label}</span>
                     {item.to === "/ipo" ? (
                       <span className="ml-auto rounded border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] text-primary">
@@ -212,16 +219,25 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                         {isActive ? (
                           <span className="absolute top-1/2 left-0 h-5 w-[2px] -translate-y-1/2 rounded-r bg-primary" />
                         ) : null}
-                        <Icon
+                        <span
                           className={cn(
-                            "size-[18px] shrink-0",
+                            "grid size-7 shrink-0 place-items-center rounded-md transition-all duration-200 group-hover:scale-110",
+                            // The shield reads as authority, so it keeps its own
+                            // colour instead of the primary accent.
                             isActive
-                              ? "text-primary"
+                              ? light
+                                ? "bg-emerald-50 text-emerald-600"
+                                : "bg-emerald-500/10 text-emerald-500 shadow-[0_0_14px_-6px_var(--color-emerald-500)]"
                               : light
-                                ? "text-slate-500 group-hover:text-slate-900"
-                                : "text-muted-foreground/70 group-hover:text-foreground",
+                                ? "text-emerald-600/80 group-hover:text-emerald-600"
+                                : "text-emerald-500/70 group-hover:text-emerald-500",
                           )}
-                        />
+                        >
+                          <Icon
+                            className="size-[18px] shrink-0"
+                            strokeWidth={1.75}
+                          />
+                        </span>
                         <span className="truncate">{item.label}</span>
                         <span
                           className={cn(
@@ -245,7 +261,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <p className="eyebrow text-[9px] text-muted-foreground">
               Gemini engine
             </p>
-            <Sparkles className="size-3.5 text-ai" />
+            <Sparkles
+              className="size-3.5 shrink-0 text-amber-500 drop-shadow-[0_0_6px_rgba(245,158,11,0.45)]"
+              strokeWidth={1.5}
+            />
           </div>
           <p className="mt-2 flex items-center gap-2 text-[11px] font-medium text-foreground">
             <span className="relative flex size-1.5">
@@ -281,9 +300,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             onClick={handleSignOut}
             title="Sign out"
             aria-label="Sign out"
-            className={`ml-auto rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground ${light ? "hover:bg-slate-100" : "hover:bg-white/5"}`}
+            className={`ml-auto rounded-md p-1.5 text-muted-foreground transition-all duration-200 hover:scale-110 hover:text-foreground ${light ? "hover:bg-slate-100" : "hover:bg-white/5"}`}
           >
-            <LogOut className="size-4" />
+            <LogOut className="size-4 shrink-0" strokeWidth={1.5} />
           </button>
         </div>
       </div>
@@ -320,28 +339,32 @@ function ThemeToggle() {
       onClick={toggleTheme}
       aria-label={`Switch to ${nextTheme} mode`}
       title={`Switch to ${nextTheme} mode`}
-      className={`grid size-9 place-items-center rounded-lg border text-muted-foreground transition-colors hover:text-foreground ${theme === "light" ? "border-slate-300 bg-white" : "border-white/[0.07] bg-white/[0.03] hover:border-white/15"}`}
+      className="grid size-9 place-items-center rounded-full border border-border bg-background/50 text-muted-foreground transition-all duration-200 hover:bg-muted/70 hover:text-foreground"
     >
       {theme === "dark" ? (
-        <Sun className="size-4" />
+        <Sun className="size-4 shrink-0" strokeWidth={1.5} />
       ) : (
-        <Moon className="size-4" />
+        <Moon className="size-4 shrink-0" strokeWidth={1.5} />
       )}
     </button>
   );
 }
 
 function NotificationsMenu() {
+  const unread = notifications.length > 0;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Notifications"
-          className="relative grid size-9 place-items-center rounded-lg border border-white/[0.07] bg-white/[0.03] text-muted-foreground transition-colors hover:border-white/15 hover:text-foreground"
+          aria-label={unread ? `Notifications, ${notifications.length} new` : "Notifications"}
+          className="relative grid size-9 place-items-center rounded-full border border-border bg-background/50 text-muted-foreground transition-all duration-200 hover:bg-muted/70 hover:text-foreground"
         >
-          <Bell className="size-4" />
-          <span className="absolute top-2 right-2 size-1.5 rounded-full bg-primary" />
+          <Bell className="size-4 shrink-0" strokeWidth={1.5} />
+          {unread ? (
+            <span className="absolute top-1 right-1 size-2 rounded-full bg-red-500 ring-1 ring-background" />
+          ) : null}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -426,7 +449,7 @@ function AccountMenu() {
           onClick={handleSignOut}
           className="gap-2 text-xs text-muted-foreground focus:text-foreground"
         >
-          <LogOut className="size-3.5" />
+          <LogOut className="size-3.5 shrink-0" strokeWidth={1.5} />
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -465,9 +488,9 @@ export function AppShell() {
             type="button"
             onClick={() => setMobileOpen(true)}
             aria-label="Open navigation"
-            className={`grid size-9 place-items-center rounded-lg border text-muted-foreground transition-colors hover:text-foreground lg:hidden ${light ? "border-slate-300 bg-white" : "border-white/[0.08] bg-white/[0.03]"}`}
+            className="grid size-9 place-items-center rounded-full border border-border bg-background/50 text-muted-foreground transition-all duration-200 hover:bg-muted/70 hover:text-foreground lg:hidden"
           >
-            <Menu className="size-4" />
+            <Menu className="size-4 shrink-0" strokeWidth={1.5} />
           </button>
 
           <Link to="/dashboard" className="lg:hidden">
@@ -483,7 +506,10 @@ export function AppShell() {
               className={`flex items-center gap-1.5 text-[10px] tracking-[0.16em] uppercase ${light ? "text-slate-500" : "text-muted-foreground/60"}`}
             >
               <span className="hidden truncate sm:inline">StockPilot</span>
-              <ChevronRight className="hidden size-3 shrink-0 sm:inline" />
+              <ChevronRight
+                className="hidden size-3 shrink-0 sm:inline"
+                strokeWidth={1.5}
+              />
               <span
                 className={`truncate ${light ? "font-medium text-slate-900" : "text-muted-foreground"}`}
               >

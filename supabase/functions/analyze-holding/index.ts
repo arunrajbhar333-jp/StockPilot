@@ -106,6 +106,31 @@ interface Analysis {
   source: "gemini" | "mock";
 }
 
+/** A market_catalog row: a watchlist candidate with no position behind it. */
+interface CatalogRow {
+  id: string;
+  symbol: string;
+  stock_name: string;
+  sector: string | null;
+  current_price: number | string | null;
+}
+
+function buildCatalogPrompt(stock: CatalogRow): string {
+  const price = number(stock.current_price);
+
+  return [
+    `Stock: ${stock.stock_name} (${stock.symbol})`,
+    `Sector: ${stock.sector ?? "not set"}`,
+    price > 0
+      ? `Last traded price: INR ${price.toFixed(2)}`
+      : "Live market price: unavailable.",
+    "Position: none — this is a watchlist candidate, not a holding, so there is no P&L to weigh.",
+    "",
+    "Grade it for an Indian retail investor deciding whether to buy today. Use STRONG BUY or STRONG SELL only when the evidence is decisive; otherwise use BUY, HOLD or SELL.",
+    "Reasoning must be one or two sentences, concrete, and must end with the action to take.",
+  ].join("\n");
+}
+
 function placeholderAnalysis(symbol: string, note: string): Analysis {
   const verdict = VERDICTS[hash(symbol) % VERDICTS.length];
   return {
@@ -182,7 +207,7 @@ function parseGeminiJson(text: string): { verdict?: unknown; reasoning?: unknown
 }
 
 async function analyzeWithGemini(
-  holding: HoldingRow,
+  prompt: string,
   apiKey: string,
   model: string,
 ): Promise<Analysis> {
@@ -202,7 +227,7 @@ async function analyzeWithGemini(
             },
           ],
         },
-        contents: [{ role: "user", parts: [{ text: buildPrompt(holding) }] }],
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.35,
           responseMimeType: "application/json",
@@ -325,7 +350,7 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  let body: { holdingId?: unknown };
+  let body: { holdingId?: unknown; stockId?: unknown };
 
   try {
     body = await req.json();
@@ -335,6 +360,108 @@ Deno.serve(async (req: Request) => {
 
   const holdingId =
     typeof body.holdingId === "string" ? body.holdingId.trim() : "";
+  const stockId = typeof body.stockId === "string" ? body.stockId.trim() : "";
+
+  if (holdingId && stockId) {
+    return json({ error: "Send holdingId or stockId, not both." }, 400);
+  }
+  if (!holdingId && !stockId) {
+    return json({ error: "A holding ID or stock ID is required." }, 400);
+  }
+
+  const apiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
+  const model = Deno.env.get("GEMINI_MODEL")?.trim() || "gemini-2.5-flash";
+
+  // ---- market_catalog branch ------------------------------------------------
+  // The scraper scores watchlist stocks here so a new STRONG BUY can reach the
+  // Telegram stream. Same Gemini call, no position behind the verdict.
+  if (stockId) {
+    if (!systemCaller) {
+      const { data: callerProfile } = await admin
+        .from("profiles")
+        .select("role")
+        .eq("id", callerId ?? "")
+        .maybeSingle();
+      if (callerProfile?.role !== "admin") {
+        return json({ error: "Only administrators can analyse the catalogue." }, 403);
+      }
+    }
+
+    const { data: stock, error: stockError } = await admin
+      .from("market_catalog")
+      .select("id, symbol, stock_name, sector, current_price")
+      .eq("id", stockId)
+      .maybeSingle();
+
+    if (stockError) {
+      return json({ error: stockError.message }, 500);
+    }
+    if (!stock) {
+      return json({ error: "That catalogue stock no longer exists." }, 404);
+    }
+
+    const catalogRow = stock as CatalogRow;
+    let catalogAnalysis: Analysis;
+
+    if (!apiKey) {
+      if (systemCaller) {
+        return json({
+          skipped: true,
+          reason: "GEMINI_API_KEY is not set; the previous verdict was kept.",
+        });
+      }
+      catalogAnalysis = placeholderAnalysis(
+        catalogRow.symbol,
+        "PLACEHOLDER — not a Gemini call: GEMINI_API_KEY is not set.",
+      );
+    } else {
+      try {
+        catalogAnalysis = await analyzeWithGemini(
+          buildCatalogPrompt(catalogRow),
+          apiKey,
+          model,
+        );
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error(
+          `[analyze-holding] Gemini call failed for ${catalogRow.symbol}: ${detail}`,
+        );
+        if (systemCaller) {
+          return json(
+            { error: "Gemini analysis failed; the previous verdict was kept." },
+            502,
+          );
+        }
+        catalogAnalysis = placeholderAnalysis(
+          catalogRow.symbol,
+          `PLACEHOLDER — not a Gemini call: ${detail.slice(0, 240)}`,
+        );
+      }
+    }
+
+    const catalogAnalyzedAt = new Date().toISOString();
+    const { error: catalogUpdateError } = await admin
+      .from("market_catalog")
+      .update({
+        ai_verdict: catalogAnalysis.verdict,
+        ai_reasoning: catalogAnalysis.reasoning,
+        ai_source: catalogAnalysis.source === "gemini" ? "gemini" : "placeholder",
+        confidence: catalogAnalysis.confidence,
+        last_analyzed_at: catalogAnalyzedAt,
+      })
+      .eq("id", catalogRow.id);
+
+    if (catalogUpdateError) {
+      return json(
+        { error: `The verdict could not be saved: ${catalogUpdateError.message}` },
+        500,
+      );
+    }
+
+    return json({ ...catalogAnalysis, analyzedAt: catalogAnalyzedAt });
+  }
+
+  // ---- portfolio branch -----------------------------------------------------
   if (!holdingId) {
     return json({ error: "A holding ID is required." }, 400);
   }
@@ -358,8 +485,6 @@ Deno.serve(async (req: Request) => {
   }
 
   const row = holding as HoldingRow;
-  const apiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
-  const model = Deno.env.get("GEMINI_MODEL")?.trim() || "gemini-2.5-flash";
 
   let analysis: Analysis;
   if (!apiKey) {
@@ -381,7 +506,7 @@ Deno.serve(async (req: Request) => {
       `[analyze-holding] calling Gemini model "${model}" for ${row.symbol ?? row.stock_name} (key present, system caller: ${systemCaller})`,
     );
     try {
-      analysis = await analyzeWithGemini(row, apiKey, model);
+      analysis = await analyzeWithGemini(buildPrompt(row), apiKey, model);
       console.log(
         `[analyze-holding] Gemini verdict for ${row.symbol ?? row.stock_name}: ${analysis.verdict}`,
       );

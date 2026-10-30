@@ -466,7 +466,10 @@ export default function Admin() {
             </p>
           </div>
           <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[10px] text-muted-foreground">
-            <ShieldCheck className="size-3 text-primary" />
+            <ShieldCheck
+            className="size-3 shrink-0 text-emerald-500"
+            strokeWidth={1.5}
+          />
             Allowlist enforced
           </span>
         </div>
@@ -595,9 +598,12 @@ export default function Admin() {
                               : `Remove ${user.name}`
                           }
                           aria-label={`Remove ${user.name}`}
-                          className="grid size-8 place-items-center rounded-lg border border-transparent text-negative/75 transition-colors hover:border-negative/25 hover:bg-negative/10 hover:text-negative disabled:cursor-not-allowed disabled:opacity-30"
+                          className="grid size-8 place-items-center rounded-lg border border-transparent text-negative/75 transition-all duration-200 hover:-translate-y-0.5 hover:border-negative/25 hover:bg-negative/10 hover:text-negative disabled:cursor-not-allowed disabled:opacity-30"
                         >
-                          <Trash2 className="size-3.5" />
+                          <Trash2
+                            className="size-3.5 shrink-0 text-red-500"
+                            strokeWidth={1.5}
+                          />
                         </button>
                       </div>
                     </td>
@@ -657,9 +663,12 @@ export default function Admin() {
                           : `Remove ${user.name}`
                       }
                       aria-label={`Remove ${user.name}`}
-                      className="grid size-7 place-items-center rounded-md text-negative/75 transition-colors hover:bg-negative/10 hover:text-negative disabled:cursor-not-allowed disabled:opacity-30"
+                      className="grid size-7 place-items-center rounded-md text-negative/75 transition-all duration-200 hover:-translate-y-0.5 hover:bg-negative/10 hover:text-negative disabled:cursor-not-allowed disabled:opacity-30"
                     >
-                      <Trash2 className="size-3.5" />
+                      <Trash2
+                        className="size-3.5 shrink-0 text-red-500"
+                        strokeWidth={1.5}
+                      />
                     </button>
                   </div>
                 </div>
@@ -697,7 +706,10 @@ export default function Admin() {
       <section className="glass rounded-2xl p-4 sm:p-5">
         <div className="flex items-center gap-2">
           <span className="grid size-6 place-items-center rounded-md border border-primary/20 bg-primary/10">
-            <ShieldCheck className="size-3 text-primary" />
+            <ShieldCheck
+            className="size-3 shrink-0 text-emerald-500"
+            strokeWidth={1.5}
+          />
           </span>
           <h2 className="text-sm font-semibold">Access model</h2>
         </div>
@@ -865,7 +877,10 @@ export default function Admin() {
               </div>
 
               <p className="flex items-start gap-1.5 rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2 text-[9px] leading-relaxed text-muted-foreground/70">
-                <ShieldCheck className="mt-0.5 size-3 shrink-0 text-primary" />
+                <ShieldCheck
+              className="mt-0.5 size-3 shrink-0 text-emerald-500"
+              strokeWidth={1.5}
+            />
                 New accounts receive the standard user role. Administrator
                 access is granted separately and unlocks every module.
               </p>

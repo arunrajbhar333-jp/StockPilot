@@ -258,7 +258,10 @@ export function AddStockDialog({
             </div>
 
             <p className="flex items-start gap-1.5 rounded-lg border border-white/[0.06] bg-black/25 px-2.5 py-2 text-[9px] leading-relaxed text-muted-foreground/70">
-              <Sparkles className="mt-0.5 size-3 shrink-0 text-ai" />
+              <Sparkles
+                className="mt-0.5 size-3 shrink-0 text-amber-500"
+                strokeWidth={1.5}
+              />
               On save, the position is graded STRONG BUY through STRONG SELL with
               a one-line thesis. Until GEMINI_API_KEY is set, the call is a
               deterministic placeholder.

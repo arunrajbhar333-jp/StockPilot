@@ -246,12 +246,17 @@ export default function IpoTracker() {
                           ? "border border-slate-300 bg-white text-slate-600 hover:text-slate-900"
                           : "border-white/[0.08] bg-white/[0.03] text-muted-foreground hover:text-foreground",
                     )}
-                  >
-                    {analyzeAll.isPending ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Sparkles className="size-3.5" />
-                    )}
+                  >                      {analyzeAll.isPending ? (
+                        <Loader2
+                          className="size-3.5 shrink-0 animate-spin"
+                          strokeWidth={1.5}
+                        />
+                      ) : (
+                        <Sparkles
+                          className="size-3.5 shrink-0 text-amber-500"
+                          strokeWidth={1.5}
+                        />
+                      )}
                     {analyzeAll.isPending
                       ? analyzeAll.progress
                         ? `Analyzing ${analyzeAll.progress.current} of ${analyzeAll.progress.total}…`
@@ -362,7 +367,7 @@ export default function IpoTracker() {
         <div className="pointer-events-none absolute -right-16 -bottom-16 size-52 rounded-full bg-ai/[0.08] blur-3xl" />
         <div className="flex items-center gap-2">
           <span className="grid size-6 place-items-center rounded-md border border-ai/25 bg-ai/10">
-            <Sparkles className="size-3 text-ai" />
+            <Sparkles className="size-3 shrink-0 text-amber-500" strokeWidth={1.5} />
           </span>
           <h2 className="text-sm font-semibold">How the AI score is calculated</h2>
         </div>

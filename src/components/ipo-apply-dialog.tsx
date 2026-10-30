@@ -72,7 +72,7 @@ export function IpoApplyDialog({
                 </div>
                 <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
                   <p className="flex items-center gap-1.5 text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
-                    <Sparkles className="size-3" /> GMP
+                    <Sparkles className="size-3 shrink-0 text-amber-500" strokeWidth={1.5} /> GMP
                   </p>
                   <p className="num mt-1.5 text-[13px] font-medium text-primary">
                     +₹{ipo.gmp} · {ipo.gmpPct.toFixed(1)}%
@@ -83,7 +83,7 @@ export function IpoApplyDialog({
               <div className="ai-note-tint rounded-xl border border-ai/20 p-3.5">
                 <div className="flex items-center justify-between">
                   <p className="flex items-center gap-1.5 text-[10px] font-medium tracking-[0.1em] text-ai uppercase">
-                    <Sparkles className="size-3" /> AI underwriting note
+                    <Sparkles className="size-3 shrink-0 text-amber-500" strokeWidth={1.5} /> AI underwriting note
                   </p>
                   <AiScore score={ipo.aiScore} />
                 </div>

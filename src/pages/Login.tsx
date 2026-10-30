@@ -151,7 +151,7 @@ export default function Login() {
           <div className="glass lift mt-6 hidden rounded-2xl p-3 sm:block lg:mt-8">
             <div className="flex items-center justify-between px-1 pb-2">
               <p className="eyebrow flex items-center gap-1.5 text-[8px] text-muted-foreground">
-                <Sparkles className="size-3 text-ai" />
+                <Sparkles className="size-3 shrink-0 text-amber-500" strokeWidth={1.5} />
                 Desk snapshot
               </p>
               <p className="num text-[9px] text-muted-foreground/60">
@@ -343,7 +343,10 @@ export default function Login() {
             </form>
 
             <p className="mt-5 flex items-start gap-1.5 border-t border-white/[0.07] pt-4 text-[10px] leading-relaxed text-muted-foreground/70">
-              <ShieldCheck className="mt-0.5 size-3 shrink-0 text-signal" />
+              <ShieldCheck
+              className="mt-0.5 size-3 shrink-0 text-emerald-500"
+              strokeWidth={1.5}
+            />
               Accounts are provisioned by a workspace administrator. Allowlist
               and module access are enforced by Supabase.
             </p>

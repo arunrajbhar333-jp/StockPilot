@@ -176,7 +176,10 @@ export function BotManagement() {
 
             <div className="flex flex-col gap-2 border-t border-white/[0.06] pt-3.5 sm:flex-row sm:items-center sm:justify-between">
               <p className="flex items-start gap-1.5 text-[9px] leading-relaxed text-muted-foreground/70">
-                <ShieldCheck className="mt-0.5 size-3 shrink-0 text-primary" />
+                <ShieldCheck
+              className="mt-0.5 size-3 shrink-0 text-emerald-500"
+              strokeWidth={1.5}
+            />
                 The token is stored in the admin-only bots table and masked in
                 this view.
               </p>
