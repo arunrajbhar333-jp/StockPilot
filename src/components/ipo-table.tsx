@@ -101,7 +101,13 @@ export function IpoTable({
             {data.map((ipo) => (
               <TableRow
                 key={ipo.id}
-                className="border-white/[0.05] transition-colors hover:bg-white/[0.03]"
+                className={cn(
+                  "border-white/[0.05] transition-colors hover:bg-white/[0.03]",
+                  // 7.0 and up is an APPLY: tint the row and mark its left edge
+                  // green so the strongest issues read first at a glance.
+                  ipo.aiScore >= 7 &&
+                    "bg-signal/[0.05] shadow-[inset_3px_0_0_0_var(--color-signal)] hover:bg-signal/[0.08]",
+                )}
               >
                 <TableCell className="py-3 pl-4 sm:pl-5">
                   <div className="flex items-center gap-2.5">

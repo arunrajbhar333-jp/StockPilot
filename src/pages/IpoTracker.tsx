@@ -27,10 +27,19 @@ const filters = [
   { key: "SME", label: "SME" },
 ] as const;
 
+const statusFilters = [
+  { key: "all", label: "All Statuses" },
+  { key: "Open", label: "Open" },
+  { key: "Upcoming", label: "Upcoming" },
+  { key: "Closing today", label: "Closing Today" },
+] as const;
+
 type FilterKey = (typeof filters)[number]["key"];
+type StatusFilterKey = (typeof statusFilters)[number]["key"];
 
 export default function IpoTracker() {
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilterKey>("all");
   const [query, setQuery] = useState("");
   const [confirmAnalyzeAll, setConfirmAnalyzeAll] = useState(false);
   const { theme } = useTheme();
@@ -77,11 +86,21 @@ export default function IpoTracker() {
 
   const visible = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return ipos.filter((ipo) => {
-      if (filter !== "all" && ipo.type !== filter) return false;
-      return term === "" || ipo.company.toLowerCase().includes(term);
-    });
-  }, [filter, ipos, query]);
+    return ipos
+      .filter((ipo) => {
+        if (filter !== "all" && ipo.type !== filter) return false;
+        if (statusFilter !== "all" && ipo.status !== statusFilter) return false;
+        return term === "" || ipo.company.toLowerCase().includes(term);
+      })
+      // Strongest conviction first, so the APPLY rows open the list. Ties fall
+      // back to the grey-market premium, then to the name for a stable order.
+      .sort(
+        (a, b) =>
+          b.aiScore - a.aiScore ||
+          b.gmp - a.gmp ||
+          a.company.localeCompare(b.company),
+      );
+  }, [filter, ipos, query, statusFilter]);
 
   const stats = useMemo(() => {
     const openNow = ipos.filter((ipo) => ipo.status !== "Upcoming").length;
@@ -249,22 +268,42 @@ export default function IpoTracker() {
               </AlertDialog>
             ) : null}
 
-            <div className="flex items-center gap-1.5 self-start rounded-lg border border-white/[0.07] bg-black/25 p-1 sm:self-auto">
-              {filters.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setFilter(item.key)}
-                  className={cn(
-                    "rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-all",
-                    filter === item.key
-                      ? "bg-primary/15 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+              <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.07] bg-black/25 p-1">
+                {filters.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setFilter(item.key)}
+                    className={cn(
+                      "rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-all",
+                      filter === item.key
+                        ? "bg-primary/15 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.07] bg-black/25 p-1">
+                {statusFilters.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setStatusFilter(item.key)}
+                    className={cn(
+                      "rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-all",
+                      statusFilter === item.key
+                        ? "bg-primary/15 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
