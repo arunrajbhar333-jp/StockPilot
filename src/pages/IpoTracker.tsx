@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useReanalyzeAllIpos } from "@/hooks/use-ipo-actions";
 import { useIpos } from "@/hooks/use-market-data";
+import { getIpoSchedule, useNow } from "@/lib/ipo-schedule";
 import { useSession } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -28,10 +29,10 @@ const filters = [
 ] as const;
 
 const statusFilters = [
-  { key: "all", label: "All Statuses" },
-  { key: "Open", label: "Open" },
-  { key: "Upcoming", label: "Upcoming" },
-  { key: "Closing today", label: "Closing Today" },
+  { key: "all", label: "All" },
+  { key: "open", label: "Open Now" },
+  { key: "upcoming", label: "Upcoming" },
+  { key: "closing-today", label: "Closing Today" },
 ] as const;
 
 type FilterKey = (typeof filters)[number]["key"];
@@ -46,6 +47,7 @@ export default function IpoTracker() {
   const { isAdmin } = useSession();
   const { ipos, isLoading, error, refetch } = useIpos();
   const analyzeAll = useReanalyzeAllIpos();
+  const now = useNow();
 
   // Rows the scraper has not scored yet: analyze-ipo writes a real score into
   // ai_score, so 0 marks "still pending" rather than "bad issue".
@@ -89,7 +91,12 @@ export default function IpoTracker() {
     return ipos
       .filter((ipo) => {
         if (filter !== "all" && ipo.type !== filter) return false;
-        if (statusFilter !== "all" && ipo.status !== statusFilter) return false;
+        if (
+          statusFilter !== "all" &&
+          getIpoSchedule(ipo, now).phase !== statusFilter
+        ) {
+          return false;
+        }
         return term === "" || ipo.company.toLowerCase().includes(term);
       })
       // Strongest conviction first, so the APPLY rows open the list. Ties fall
@@ -100,10 +107,15 @@ export default function IpoTracker() {
           b.gmp - a.gmp ||
           a.company.localeCompare(b.company),
       );
-  }, [filter, ipos, query, statusFilter]);
+  }, [filter, ipos, now, query, statusFilter]);
 
   const stats = useMemo(() => {
-    const openNow = ipos.filter((ipo) => ipo.status !== "Upcoming").length;
+    // Use the live clock rather than the stored snapshot, so the count matches
+    // the badges in the table.
+    const openNow = ipos.filter((ipo) => {
+      const phase = getIpoSchedule(ipo, now).phase;
+      return phase === "open" || phase === "closing-today";
+    }).length;
     const avgScore = ipos.length
       ? ipos.reduce((total, ipo) => total + ipo.aiScore, 0) / ipos.length
       : 0;
@@ -115,7 +127,7 @@ export default function IpoTracker() {
       : 0;
 
     return { openNow, avgScore, bestGmp, bestSub };
-  }, [ipos]);
+  }, [ipos, now]);
 
   return (
     <div className="space-y-5 sm:space-y-6">

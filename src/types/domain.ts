@@ -55,6 +55,10 @@ export interface Ipo {
   subscription: number;
   openDate: string;
   closeDate: string;
+  /** ISO date (YYYY-MM-DD) the book opens, null when the feed omits it. */
+  openOn: string | null;
+  /** ISO date (YYYY-MM-DD) the book closes, null when the feed omits it. */
+  closeOn: string | null;
   status: IpoStatus;
   thesis: string;
 }

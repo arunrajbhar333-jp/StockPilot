@@ -129,6 +129,13 @@ function formatLastActive(value: string | null): string {
     : lastActiveFormatter.format(parsed);
 }
 
+/** "2026-10-28T00:00:00+00:00" -> "2026-10-28"; null when unusable. */
+function toIsoDay(value: string | null): string | null {
+  if (!value) return null;
+  const day = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+}
+
 /** "2026-10-28" -> "28 Oct" (date-only, interpreted as UTC). */
 function formatShortDate(value: string | null): string {
   if (!value) return "—";
@@ -188,6 +195,8 @@ export function mapIpoRow(row: IpoRow): Ipo {
     subscription: toNumber(row.subscription),
     openDate: formatShortDate(row.open_date),
     closeDate: formatShortDate(row.close_date),
+    openOn: toIsoDay(row.open_date),
+    closeOn: toIsoDay(row.close_date),
     status,
     thesis: row.thesis ?? "",
   };
