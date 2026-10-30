@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, MessageCircle, Send, Sparkles, X } from "lucide-react";
+import { Loader2, Send, Sparkles, X } from "lucide-react";
 import { usePortfolioChat, type ChatTurn } from "@/hooks/use-portfolio-actions";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -10,12 +10,13 @@ const SUGGESTIONS = [
   "Infra push se kaunse holdings ko fayda hoga?",
 ];
 
-/** Floating "Ask AI" assistant. Ask about your portfolio, India macro, or crude oil.
+/** Floating "Ask AI" assistant. Closed shows a circular Sparkles FAB; open shows a glass
+ * chat window with an X close button in the header top-right.
  */
 export function AiChatWidget() {
   const { user, canAccess } = useSession();
   const chat = usePortfolioChat();
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [value, setValue] = useState("");
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
@@ -54,9 +55,9 @@ export function AiChatWidget() {
 
   return (
     <>
-      {open ? (
-        <div className="fixed right-3 bottom-3 z-50 flex w-[calc(100vw-1.5rem)] max-w-[360px] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:right-5 sm:bottom-5 chatbot-fixed relative">
-          <div className="flex items-center gap-2.5 border-b border-border px-3.5 py-3">
+      {isOpen ? (
+        <div className="fixed bottom-4 right-4 z-50 w-[calc(100vw-1.5rem)] max-w-[360px] flex-col overflow-hidden rounded-2xl border border-border bg-background/80 backdrop-blur-lg shadow-2xl sm:bottom-6 sm:right-6 relative">
+          <div className="flex items-center justify-between gap-2 border-b border-border px-3.5 py-3">
             <span className="grid size-7 shrink-0 place-items-center rounded-lg border border-primary/25 bg-primary/10">
               <Sparkles
                 className="size-3.5 shrink-0 text-amber-500"
@@ -71,7 +72,7 @@ export function AiChatWidget() {
             </div>
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={() => setIsOpen(false)}
               aria-label="Close assistant"
               className="grid size-7 place-items-center rounded-full text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground"
             >
@@ -164,17 +165,11 @@ export function AiChatWidget() {
 
       <button
         type="button"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-        aria-label={open ? "Close AI assistant" : "Ask AI"}
-        className="primary-glow-sm fixed right-3 bottom-3 z-50 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary px-4 py-2.5 text-[12px] font-semibold text-primary-foreground shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 sm:right-5 sm:bottom-5"
+        onClick={() => setIsOpen(true)}
+        aria-label="Ask AI"
+        className="primary-glow-sm fixed bottom-3 right-3 z-50 inline-flex items-center justify-center size-16 rounded-full bg-primary text-primary-foreground shadow-lg transition-transform duration-200 hover:scale-105 sm:bottom-5 sm:right-5"
       >
-        {open ? (
-          <X className="size-4 shrink-0" strokeWidth={1.5} />
-        ) : (
-          <MessageCircle className="size-4 shrink-0" strokeWidth={1.5} />
-        )}
-        {open ? "Close" : "Ask AI"}
+        <Sparkles className="size-5 shrink-0" strokeWidth={1.5} />
       </button>
     </>
   );
