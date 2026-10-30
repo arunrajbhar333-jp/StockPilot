@@ -2,6 +2,7 @@ import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
+import { useTheme } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
@@ -36,6 +37,21 @@ const buttonVariants = cva(
   }
 )
 
+/**
+ * Light-theme button palette. Applied only when the theme is 'light'; dark
+ * mode keeps the gold / translucent variants declared in buttonVariants.
+ */
+const lightVariants = {
+  default: "bg-blue-600 text-white shadow-sm hover:bg-blue-700",
+  destructive: "bg-red-600 text-white hover:bg-red-700",
+  outline:
+    "border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900",
+  secondary:
+    "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900",
+  ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+  link: "text-blue-600 hover:text-blue-700",
+} as const
+
 function Button({
   className,
   variant = "default",
@@ -47,13 +63,18 @@ function Button({
     asChild?: boolean
   }) {
   const Comp = asChild ? Slot : "button"
+  const { theme } = useTheme()
 
   return (
     <Comp
       data-slot="button"
       data-variant={variant}
       data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(
+        buttonVariants({ variant, size }),
+        theme === "light" && lightVariants[variant ?? "default"],
+        className
+      )}
       {...props}
     />
   )

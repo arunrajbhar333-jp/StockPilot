@@ -4,6 +4,7 @@ import type {
   IpoVerdict,
   SipVerdict,
 } from "@/types/domain";
+import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 export type AnyVerdict = IpoVerdict | HoldingVerdict | SipVerdict;
@@ -45,6 +46,28 @@ const dotStyles: Record<Tone, string> = {
   strongNegative: "bg-negative",
 };
 
+/**
+ * Light-theme badges. BUY / APPLY emerald, SELL / STRONG SELL red, HOLD /
+ * WATCH amber, placeholder slate. Dark mode keeps toneStyles above.
+ */
+const lightToneStyles: Record<Tone, string> = {
+  positive: "border-emerald-200 bg-emerald-100 text-emerald-800",
+  neutral: "border-amber-200 bg-amber-100 text-amber-800",
+  negative: "border-red-200 bg-red-100 text-red-800",
+  strongPositive:
+    "border-emerald-200 bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300",
+  strongNegative:
+    "border-red-200 bg-red-100 text-red-800 ring-1 ring-red-300",
+};
+
+const lightDotStyles: Record<Tone, string> = {
+  positive: "bg-emerald-600",
+  neutral: "bg-amber-600",
+  negative: "bg-red-600",
+  strongPositive: "bg-emerald-700",
+  strongNegative: "bg-red-700",
+};
+
 /** True for the two strongest negative calls, used to tint whole rows. */
 export function isSellVerdict(verdict: HoldingVerdict): boolean {
   return verdict === "SELL" || verdict === "STRONG SELL";
@@ -57,6 +80,8 @@ export function VerdictBadge({
   verdict: AnyVerdict;
   className?: string;
 }) {
+  const { theme } = useTheme();
+  const light = theme === "light";
   const tone = verdictTone[verdict];
 
   const strong = tone === "strongPositive" || tone === "strongNegative";
@@ -66,11 +91,16 @@ export function VerdictBadge({
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] tracking-[0.12em] whitespace-nowrap",
         strong ? "font-bold" : "font-semibold",
-        toneStyles[tone],
+        light ? lightToneStyles[tone] : toneStyles[tone],
         className,
       )}
     >
-      <span className={cn("size-1.5 rounded-full", dotStyles[tone])} />
+      <span
+        className={cn(
+          "size-1.5 rounded-full",
+          light ? lightDotStyles[tone] : dotStyles[tone],
+        )}
+      />
       {verdict}
     </span>
   );
@@ -103,13 +133,20 @@ export function AiScore({
 }
 
 export function IpoTypeBadge({ type }: { type: "SME" | "Mainboard" }) {
+  const { theme } = useTheme();
+  const light = theme === "light";
+
   return (
     <span
       className={cn(
         "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium",
         type === "SME"
-          ? "border-ai/25 bg-ai/10 text-ai"
-          : "border-white/10 bg-white/[0.04] text-muted-foreground",
+          ? light
+            ? "border-violet-200 bg-violet-100 text-violet-800"
+            : "border-ai/25 bg-ai/10 text-ai"
+          : light
+            ? "border-slate-200 bg-slate-100 text-slate-600"
+            : "border-white/10 bg-white/[0.04] text-muted-foreground",
       )}
     >
       {type}
@@ -124,6 +161,8 @@ export function ChangePill({
   changePct: number;
   className?: string;
 }) {
+  const { theme } = useTheme();
+  const light = theme === "light";
   const positive = changePct >= 0;
   const Icon = positive ? ArrowUpRight : ArrowDownRight;
 
@@ -132,8 +171,12 @@ export function ChangePill({
       className={cn(
         "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium",
         positive
-          ? "bg-signal/10 text-signal"
-          : "bg-negative/10 text-negative",
+          ? light
+            ? "bg-emerald-100 text-emerald-800"
+            : "bg-signal/10 text-signal"
+          : light
+            ? "bg-red-100 text-red-800"
+            : "bg-negative/10 text-negative",
         className,
       )}
     >
@@ -147,6 +190,8 @@ export function ChangePill({
 }
 
 export function RiskBadge({ risk }: { risk: "Low" | "Moderate" | "High" }) {
+  const { theme } = useTheme();
+  const light = theme === "light";
   const tone: Tone =
     risk === "Low" ? "positive" : risk === "Moderate" ? "neutral" : "negative";
 
@@ -154,9 +199,15 @@ export function RiskBadge({ risk }: { risk: "Low" | "Moderate" | "High" }) {
     <span
       className={cn(
         "inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium",
-        risk === "Low" && "bg-signal/10 text-signal",
-        risk === "Moderate" && "bg-white/[0.06] text-muted-foreground",
-        risk === "High" && tone === "negative" && "bg-negative/10 text-negative",
+        risk === "Low" &&
+          (light ? "bg-emerald-100 text-emerald-800" : "bg-signal/10 text-signal"),
+        risk === "Moderate" &&
+          (light
+            ? "bg-slate-100 text-slate-600"
+            : "bg-white/[0.06] text-muted-foreground"),
+        risk === "High" &&
+          tone === "negative" &&
+          (light ? "bg-red-100 text-red-800" : "bg-negative/10 text-negative"),
       )}
     >
       {risk} risk

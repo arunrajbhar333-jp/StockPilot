@@ -100,6 +100,8 @@ const toneDots = {
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { user, isAdmin, canAccess, logout } = useSession();
+  const { theme } = useTheme();
+  const light = theme === "light";
   const navigate = useNavigate();
 
   const visibleItems = navItems.filter((item) => {
@@ -142,8 +144,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                   cn(
                     "group relative flex items-center gap-3 rounded-xl border px-3 py-2.5 text-[13px] font-medium transition-all duration-300",
                     isActive
-                      ? "border-primary/20 bg-gradient-to-r from-primary/[0.14] via-primary/[0.05] to-transparent text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
-                      : "border-transparent text-muted-foreground hover:border-white/5 hover:bg-white/[0.04] hover:text-foreground",
+                      ? light
+                        ? "border-blue-100 bg-blue-50 font-medium text-blue-700"
+                        : "border-primary/20 bg-gradient-to-r from-primary/[0.14] via-primary/[0.05] to-transparent text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
+                      : light
+                        ? "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-900"
+                        : "border-transparent text-muted-foreground hover:border-white/5 hover:bg-white/[0.04] hover:text-foreground",
                   )
                 }
               >
@@ -157,7 +163,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                         "size-[18px] shrink-0 transition-colors",
                         isActive
                           ? "text-primary"
-                          : "text-muted-foreground/70 group-hover:text-foreground",
+                          : light
+                            ? "text-slate-500 group-hover:text-slate-900"
+                            : "text-muted-foreground/70 group-hover:text-foreground",
                       )}
                     />
                     <span className="truncate">{item.label}</span>
@@ -190,8 +198,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                       cn(
                         "group relative flex items-center gap-3 rounded-xl border px-3 py-2.5 text-[13px] font-medium transition-all duration-300",
                         isActive
-                          ? "border-primary/20 bg-gradient-to-r from-primary/[0.14] via-primary/[0.05] to-transparent text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
-                          : "border-transparent text-muted-foreground hover:border-white/5 hover:bg-white/[0.04] hover:text-foreground",
+                          ? light
+                            ? "border-blue-100 bg-blue-50 font-medium text-blue-700"
+                            : "border-primary/20 bg-gradient-to-r from-primary/[0.14] via-primary/[0.05] to-transparent text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]"
+                          : light
+                            ? "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-900"
+                            : "border-transparent text-muted-foreground hover:border-white/5 hover:bg-white/[0.04] hover:text-foreground",
                       )
                     }
                   >
@@ -205,11 +217,18 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                             "size-[18px] shrink-0",
                             isActive
                               ? "text-primary"
-                              : "text-muted-foreground/70 group-hover:text-foreground",
+                              : light
+                                ? "text-slate-500 group-hover:text-slate-900"
+                                : "text-muted-foreground/70 group-hover:text-foreground",
                           )}
                         />
                         <span className="truncate">{item.label}</span>
-                        <span className="ml-auto rounded border border-white/10 px-1 py-0.5 text-[8px] font-semibold tracking-[0.14em] text-muted-foreground">
+                        <span
+                          className={cn(
+                            "ml-auto rounded border px-1 py-0.5 text-[8px] font-semibold tracking-[0.14em] text-muted-foreground",
+                            light ? "border-slate-200" : "border-white/10",
+                          )}
+                        >
                           ADMIN
                         </span>
                       </>
@@ -262,7 +281,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             onClick={handleSignOut}
             title="Sign out"
             aria-label="Sign out"
-            className="ml-auto rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+            className={`ml-auto rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground ${light ? "hover:bg-slate-100" : "hover:bg-white/5"}`}
           >
             <LogOut className="size-4" />
           </button>
@@ -273,8 +292,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function MarketStatusPill() {
+  const { theme } = useTheme();
+
   return (
-    <div className="hidden items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 sm:flex">
+    <div
+      className={`hidden items-center gap-2 rounded-full border px-3 py-1.5 sm:flex ${theme === "light" ? "border-slate-200 bg-white text-slate-600 shadow-sm" : "border-white/[0.08] bg-white/[0.03]"}`}
+    >
       <span className="relative flex size-1.5">
         <span className="absolute inline-flex size-full animate-ping rounded-full bg-signal/70" />
         <span className="relative inline-flex size-1.5 rounded-full bg-signal" />
@@ -297,7 +320,7 @@ function ThemeToggle() {
       onClick={toggleTheme}
       aria-label={`Switch to ${nextTheme} mode`}
       title={`Switch to ${nextTheme} mode`}
-      className="grid size-9 place-items-center rounded-lg border border-white/[0.07] bg-white/[0.03] text-muted-foreground transition-colors hover:border-white/15 hover:text-foreground"
+      className={`grid size-9 place-items-center rounded-lg border text-muted-foreground transition-colors hover:text-foreground ${theme === "light" ? "border-slate-300 bg-white" : "border-white/[0.07] bg-white/[0.03] hover:border-white/15"}`}
     >
       {theme === "dark" ? (
         <Sun className="size-4" />
@@ -413,22 +436,36 @@ function AccountMenu() {
 
 export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { theme } = useTheme();
+  const light = theme === "light";
   const location = useLocation();
   const title = pageTitles[location.pathname] ?? "Workspace";
 
   return (
-    <div className="relative min-h-dvh">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[272px] border-r border-white/[0.06] bg-background/85 backdrop-blur-2xl lg:flex lg:flex-col">
+    <div className={light ? "relative min-h-dvh bg-slate-50" : "relative min-h-dvh"}>
+      <aside
+        className={
+          light
+            ? "fixed inset-y-0 left-0 z-40 hidden w-[272px] border-r border-slate-200 bg-white lg:flex lg:flex-col"
+            : "fixed inset-y-0 left-0 z-40 hidden w-[272px] border-r border-white/[0.06] bg-background/85 backdrop-blur-2xl lg:flex lg:flex-col"
+        }
+      >
         <SidebarContent />
       </aside>
 
       <div className="lg:pl-[272px]">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-white/[0.06] bg-background/60 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
+        <header
+          className={
+            light
+              ? "sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8"
+              : "sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-white/[0.06] bg-background/60 px-4 backdrop-blur-xl sm:px-6 lg:px-8"
+          }
+        >
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
             aria-label="Open navigation"
-            className="grid size-9 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-muted-foreground transition-colors hover:text-foreground lg:hidden"
+            className={`grid size-9 place-items-center rounded-lg border text-muted-foreground transition-colors hover:text-foreground lg:hidden ${light ? "border-slate-300 bg-white" : "border-white/[0.08] bg-white/[0.03]"}`}
           >
             <Menu className="size-4" />
           </button>

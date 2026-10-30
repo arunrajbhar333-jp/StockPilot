@@ -134,32 +134,31 @@
   --panel: oklch(0.2 0.014 264);
 }
 
-/* Light theme: bg-gray-50 canvas, solid bg-white cards with
-   border-gray-200 + shadow-sm, text-gray-900/500/700 hierarchy, and the
-   corporate blue accent (bg-blue-600 / text-blue-600). Every rule in this
-   block and in the light-mode section below is scoped to `.light`, which only
-   exists on <html> when the theme toggle is set to 'light'. Dark mode is
-   untouched. */
+/* Light theme: slate-50 canvas, solid white cards with slate-200 borders and
+   shadow-sm, slate-900/500/700 text hierarchy, and the blue-600 accent. Every
+   rule in this block and in the light-mode sections below is scoped to
+   `.light`, which only exists on <html> when the theme toggle is set to
+   'light'. Dark mode is untouched. */
 .light {
   --color-white: oklch(0.22 0.02 260);
 
-  --background: #f9fafb; /* bg-gray-50 — cards now stand out */
-  --foreground: #111827; /* text-gray-900 — headings */
+  --background: #f8fafc; /* bg-slate-50 — cards stand out */
+  --foreground: #0f172a; /* text-slate-900 — headings */
   --card: #ffffff; /* bg-white */
-  --card-foreground: #111827;
+  --card-foreground: #0f172a;
   --popover: #ffffff;
-  --popover-foreground: #111827;
+  --popover-foreground: #0f172a;
   --primary: #2563eb; /* bg-blue-600 — replaces the gold accent */
   --primary-foreground: #ffffff; /* text-white */
-  --secondary: #f3f4f6; /* bg-gray-100 */
-  --secondary-foreground: #374151;
-  --muted: #f3f4f6;
-  --muted-foreground: #6b7280; /* text-gray-500 — sub-headings, stats */
-  --accent: #f3f4f6;
-  --accent-foreground: #111827;
+  --secondary: #f1f5f9; /* bg-slate-100 */
+  --secondary-foreground: #334155;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b; /* text-slate-500 — sub-headings, stats */
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
   --destructive: #dc2626;
-  --border: #e5e7eb; /* border-gray-200 */
-  --input: #d1d5db; /* border-gray-300 */
+  --border: #e2e8f0; /* border-slate-200 */
+  --input: #cbd5e1; /* border-slate-300 */
   --ring: rgb(37 99 235 / 45%);
   --chart-1: #2563eb;
   --chart-2: #059669;
@@ -167,20 +166,20 @@
   --chart-4: #0284c7;
   --chart-5: #dc2626;
   --sidebar: #ffffff; /* sidebar bg-white */
-  --sidebar-foreground: #111827;
+  --sidebar-foreground: #0f172a;
   --sidebar-primary: #2563eb;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f3f4f6;
-  --sidebar-accent-foreground: #111827;
-  --sidebar-border: #e5e7eb;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
   --sidebar-ring: rgb(37 99 235 / 40%);
 
-  /* Emerald 700: 5.5:1 on white, so badge and P&L text pass AA. */
-  --signal: #047857;
+  /* Emerald 800: 8.9:1 on white and 7.5:1 on emerald-100. */
+  --signal: #065f46;
   --negative: #dc2626;
   --ai: #7c3aed;
-  --gold: #b45309; /* amber-700 — HOLD badges and neutral accents stay amber */
-  --panel: #f3f4f6;
+  --gold: #92400e; /* amber-800 — HOLD badges and neutral accents stay amber */
+  --panel: #f1f5f9;
 
   --brand-mark-1: #93c5fd;
   --brand-mark-2: #2563eb;
@@ -451,27 +450,27 @@
   background-clip: padding-box;
 }
 
-/* Cards: bg-white border border-gray-200 shadow-sm rounded-xl */
+/* Cards: bg-white border border-slate-200 shadow-sm rounded-xl */
 .light .glass {
   background-image: none;
   background-color: #ffffff;
-  border-color: #e5e7eb;
+  border-color: #e2e8f0;
   border-radius: 0.75rem;
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.05);
 }
 
-/* Dialogs / login card: same white surface, slightly stronger elevation */
+/* Modals: bg-white border border-slate-200 shadow-xl */
 .light .glass-deep {
   background-image: none;
   background-color: #ffffff;
-  border-color: #e5e7eb;
+  border-color: #e2e8f0;
   box-shadow:
-    0 10px 15px -3px rgb(0 0 0 / 0.1),
-    0 4px 6px -4px rgb(0 0 0 / 0.1);
+    0 20px 25px -5px rgb(15 23 42 / 0.15),
+    0 8px 10px -6px rgb(15 23 42 / 0.1);
 }
 
 .light .lift:hover {
-  border-color: #d1d5db;
+  border-color: #cbd5e1;
   box-shadow:
     0 4px 6px -1px rgb(0 0 0 / 0.1),
     0 2px 4px -2px rgb(0 0 0 / 0.1);
@@ -598,63 +597,67 @@
    theme is 'dark'.
    ----------------------------------------------------------------------- */
 
-/* Table / card separators: border-b border-gray-200 */
+/* Table body rows: border-b border-slate-100 */
+.light .border-white\/\[0\.05\] {
+  border-color: #f1f5f9;
+}
+
+/* Card and section separators: border-b border-slate-200 */
 .light .border-white\/5,
 .light .border-white\/10,
-.light .border-white\/\[0\.05\],
 .light .border-white\/\[0\.06\],
 .light .border-white\/\[0\.07\],
 .light .border-white\/\[0\.08\],
 .light .border-white\/\[0\.09\] {
-  border-color: #e5e7eb;
+  border-color: #e2e8f0;
 }
 
 .light .border-white\/20 {
-  border-color: #d1d5db;
+  border-color: #cbd5e1;
 }
 
 .light .divide-white\/\[0\.05\] > :not(:last-child),
 .light .divide-white\/\[0\.06\] > :not(:last-child),
 .light .divide-white\/10 > :not(:last-child) {
-  border-color: #e5e7eb;
+  border-color: #e2e8f0;
 }
 
 .light .hover\:border-white\/5:hover,
 .light .hover\:border-white\/15:hover {
-  border-color: #d1d5db;
+  border-color: #cbd5e1;
 }
 
-/* Tables: headers text-gray-500 font-medium, data (emails, timestamps) gray-700 */
+/* Tables: headers text-slate-500 font-medium, data (emails, timestamps) slate-700 */
 .light table th {
-  color: #6b7280;
+  color: #64748b;
   font-weight: 500;
 }
 
 .light table td .text-muted-foreground,
 .light table td.num.text-muted-foreground {
-  color: #374151;
+  color: #334155;
 }
 
-/* Sidebar: bg-white border-r border-gray-200, text-gray-600 hover:text-gray-900 */
+/* Sidebar: bg-white border-r border-slate-200, text-slate-600 hover:text-slate-900 */
 .light aside,
 .light [data-slot="sheet-content"] {
   background-color: #ffffff;
-  border-color: #e5e7eb;
+  border-color: #e2e8f0;
 }
 
 .light aside a.text-muted-foreground,
 .light [data-slot="sheet-content"] a.text-muted-foreground {
-  color: #4b5563;
+  color: #475569;
 }
 
 .light aside a.text-muted-foreground:hover,
 .light [data-slot="sheet-content"] a.text-muted-foreground:hover {
-  color: #111827;
+  color: #0f172a;
 }
 
 .light aside .text-muted-foreground\/70,
 .light [data-slot="sheet-content"] .text-muted-foreground\/70 {
-  color: #4b5563;
+  color: #475569;
 }
 
 /* Active menu item: bg-blue-50 text-blue-700 font-medium (React Router NavLink) */
@@ -679,59 +682,59 @@
 .light .text-muted-foreground\/60,
 .light .text-muted-foreground\/70,
 .light .text-muted-foreground\/80 {
-  color: #6b7280;
+  color: #64748b;
 }
 
 .light .placeholder\:text-muted-foreground\/50::placeholder,
 .light .placeholder\:text-muted-foreground\/60::placeholder,
 .light .placeholder\:text-muted-foreground\/70::placeholder {
-  color: #6b7280;
+  color: #64748b;
 }
 
 /* --------------------------------------------------------------------------
-   4. Tables — header row bg-gray-50 text-gray-500 font-medium,
-      row dividers border-gray-200, row hover bg-gray-50.
+   4. Tables — header row bg-slate-50 text-slate-500 font-medium,
+      row dividers border-slate-100, row hover bg-slate-50.
    ----------------------------------------------------------------------- */
 .light thead tr,
 .light thead tr:hover {
-  background-color: #f9fafb;
+  background-color: #f8fafc;
 }
 
 .light table td .text-muted-foreground,
 .light table td .text-muted-foreground\/60,
 .light table td .text-muted-foreground\/70,
 .light table td .text-muted-foreground\/80 {
-  color: #374151;
+  color: #334155;
 }
 
 /* Row / list hover: bg-gray-50. The heavier /0.06 hover is used by buttons and
    cards, so it steps to gray-200 to stay a visible press state. */
 .light .hover\:bg-white\/5:hover,
 .light .hover\:bg-white\/\[0\.03\]:hover {
-  background-color: #f9fafb;
+  background-color: #f8fafc;
 }
 
 .light .hover\:bg-white\/\[0\.06\]:hover {
-  background-color: #e5e7eb;
+  background-color: #e2e8f0;
 }
 
 /* --------------------------------------------------------------------------
-   3. Sidebar — bg-white border-r border-gray-200,
-      inactive text-gray-600 hover:bg-gray-100, active bg-blue-50 text-blue-700.
+   3. Sidebar — bg-white border-r border-slate-200,
+      inactive text-slate-600 hover:bg-slate-100, active bg-blue-50 text-blue-700.
    ----------------------------------------------------------------------- */
 .light aside a,
 .light [data-slot="sheet-content"] a {
-  color: #4b5563;
+  color: #475569;
 }
 
 .light aside a:hover,
 .light [data-slot="sheet-content"] a:hover {
-  color: #111827;
+  color: #0f172a;
 }
 
 .light aside a.hover\:bg-white\/\[0\.04\]:hover,
 .light [data-slot="sheet-content"] a.hover\:bg-white\/\[0\.04\]:hover {
-  background-color: #f3f4f6;
+  background-color: #f1f5f9;
 }
 
 .light aside a[aria-current="page"],
@@ -744,21 +747,21 @@
 
 .light aside .text-muted-foreground\/70,
 .light [data-slot="sheet-content"] .text-muted-foreground\/70 {
-  color: #6b7280;
+  color: #64748b;
 }
 
 /* --------------------------------------------------------------------------
    5. Badges & verdicts — the exact light-mode palette.
-      SELL / STRONG SELL  bg-red-50    text-red-700    border-red-200
-      BUY  / STRONG BUY   bg-emerald-50 text-emerald-700 border-emerald-200
-      HOLD                 bg-amber-50  text-amber-700  border-amber-200
+      SELL / STRONG SELL  bg-red-100    text-red-800    border-red-200
+      BUY  / STRONG BUY   bg-emerald-100 text-emerald-800 border-emerald-200
+      HOLD                 bg-amber-100  text-amber-800  border-amber-200
    ----------------------------------------------------------------------- */
 .light .bg-signal\/10 {
-  background-color: #ecfdf5;
+  background-color: #d1fae5;
 }
 
 .light .bg-signal\/\[0\.16\] {
-  background-color: #ecfdf5;
+  background-color: #d1fae5;
 }
 
 .light .border-signal\/25 {
@@ -771,15 +774,15 @@
 
 .light .text-signal,
 .light .text-signal\/70 {
-  color: #047857;
+  color: #065f46;
 }
 
 .light .bg-gold\/10 {
-  background-color: #fffbeb;
+  background-color: #fef3c7;
 }
 
 .light .bg-gold\/\[0\.08\] {
-  background-color: #fffbeb;
+  background-color: #fef3c7;
 }
 
 .light .border-gold\/25 {
@@ -787,15 +790,15 @@
 }
 
 .light .text-gold {
-  color: #b45309;
+  color: #92400e;
 }
 
 .light .bg-negative\/10 {
-  background-color: #fef2f2;
+  background-color: #fee2e2;
 }
 
 .light .bg-negative\/\[0\.16\] {
-  background-color: #fef2f2;
+  background-color: #fee2e2;
 }
 
 .light .border-negative\/25 {
@@ -809,37 +812,37 @@
 .light .text-negative,
 .light .text-negative\/70,
 .light .text-negative\/75 {
-  color: #b91c1c;
+  color: #991b1b;
 }
 
-/* PLACEHOLDER chip: bg-gray-100 text-gray-600 border-gray-300. Matched on the
-   gold chip pair so the amber HOLD badge above is unaffected. */
+/* PLACEHOLDER chip: bg-slate-100 text-slate-600 border-slate-300. Matched on
+   the gold chip pair so the amber HOLD badge above is unaffected. */
 .light .border-gold\/30 {
-  border-color: #d1d5db;
+  border-color: #cbd5e1;
 }
 
 .light .border-gold\/30.bg-gold\/10,
 .light .border-gold\/30.bg-gold\/\[0\.08\] {
-  background-color: #f3f4f6;
-  border-color: #d1d5db;
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
 }
 
 .light .border-gold\/30.text-gold,
 .light .border-gold\/30 .text-gold {
-  color: #4b5563;
+  color: #475569;
 }
 
 /* --------------------------------------------------------------------------
    6. Inputs & buttons.
-      Input: bg-white border-gray-300 text-gray-900 focus ring blue.
-      Primary: bg-blue-600 hover:bg-blue-700.  Cancel: white / gray-300 / gray-700.
+      Input: bg-white border-slate-300 text-slate-900 focus ring blue.
+      Primary: bg-blue-600 hover:bg-blue-700.  Cancel: white / slate-300 / slate-700.
    ----------------------------------------------------------------------- */
 .light input[data-slot="input"],
 .light select[data-slot="input"],
 .light textarea[data-slot="input"] {
   background-color: #ffffff;
-  border-color: #d1d5db;
-  color: #111827;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 .light input[data-slot="input"]:focus-visible,
@@ -855,51 +858,51 @@
 
 .light button[data-variant="secondary"] {
   background-color: #ffffff;
-  border: 1px solid #d1d5db;
-  color: #374151;
+  border: 1px solid #cbd5e1;
+  color: #334155;
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
 }
 
 .light button[data-variant="secondary"]:hover {
-  background-color: #f9fafb;
-  color: #111827;
+  background-color: #f8fafc;
+  color: #0f172a;
 }
 
 /* Cancel buttons in dialog footers are ghost buttons in the dark theme. */
 .light [data-slot="dialog-footer"] button[data-variant="ghost"] {
   background-color: #ffffff;
-  border: 1px solid #d1d5db;
-  color: #374151;
+  border: 1px solid #cbd5e1;
+  color: #334155;
 }
 
 .light [data-slot="dialog-footer"] button[data-variant="ghost"]:hover {
-  background-color: #f9fafb;
-  color: #111827;
+  background-color: #f8fafc;
+  color: #0f172a;
 }
 
 /* --------------------------------------------------------------------------
    7. AI market mood & desk briefing — white card with a subtle border,
       gray-900 score text, tags bg-gray-100 text-gray-700.
    ----------------------------------------------------------------------- */
-/* Tags/chips: gray-100 surface, gray-700 label (desk briefing tags, header
+/* Tags/chips: slate-100 surface, slate-700 label (desk briefing tags, header
    pills, module chips). The mood score itself is already text-foreground =
-   gray-900 through the --foreground token. */
+   slate-900 through the --foreground token. */
 .light span.bg-white\/\[0\.03\].text-muted-foreground {
-  background-color: #f3f4f6;
-  color: #374151;
+  background-color: #f1f5f9;
+  color: #334155;
 }
 
 .light .bg-white\/\[0\.03\] {
-  background-color: #f3f4f6;
+  background-color: #f1f5f9;
 }
 
 .light .bg-white\/\[0\.02\] {
-  background-color: #f9fafb;
+  background-color: #f8fafc;
 }
 
 .light .bg-white\/\[0\.04\],
 .light .bg-white\/\[0\.06\],
 .light .bg-white\/\[0\.07\],
 .light .bg-white\/\[0\.08\] {
-  background-color: #f3f4f6;
+  background-color: #f1f5f9;
 }
