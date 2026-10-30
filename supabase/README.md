@@ -113,7 +113,10 @@ underwriting note**. Callers must be the service role key (the scraper) or an
 active administrator, because a verdict is shared by every member. It reads the
 same `GEMINI_API_KEY` / `GEMINI_MODEL` secrets; without a key it returns
 `{ skipped: true }` and leaves the row at its `0.0` / `WATCH` default rather than
-inventing a score.
+inventing a score. An administrator can trigger a single issue from the IPO
+tracker: every row still at `0.0` carries a **Re-analyze** button. The Python
+sync scores new issues automatically and re-scores an existing one when its GMP
+or subscription book moves materially.
 
 Until these functions are deployed, the Create user, Edit user and Remove user
 actions will report that the function is unreachable.

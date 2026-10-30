@@ -1,8 +1,11 @@
 import { useState } from "react";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Loader2, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import { IpoApplyDialog } from "@/components/ipo-apply-dialog";
 import { AiScore, IpoTypeBadge, VerdictBadge } from "@/components/signals";
 import { Button } from "@/components/ui/button";
+import { useReanalyzeIpo } from "@/hooks/use-ipo-actions";
+import { useSession } from "@/lib/session";
 import {
   Table,
   TableBody,
@@ -14,6 +17,43 @@ import {
 import type { Ipo } from "@/types/domain";
 import { cn } from "@/lib/utils";
 
+/** Admin-only manual trigger for an issue that is still sitting at 0.0. */
+function ReanalyzeButton({ ipo }: { ipo: Ipo }) {
+  const reanalyze = useReanalyzeIpo();
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      disabled={reanalyze.isPending}
+      onClick={() =>
+        reanalyze.mutate(
+          { ipoId: ipo.id },
+          {
+            onSuccess: (analysis) =>
+              toast.success(
+                `${ipo.company}: ${analysis.verdict} at ${analysis.aiScore.toFixed(1)}/10`,
+                { description: analysis.reasoning },
+              ),
+            onError: (mutationError) =>
+              toast.error(`Could not score ${ipo.company}`, {
+                description: mutationError.message,
+              }),
+          },
+        )
+      }
+      className="h-6 gap-1 rounded-md px-1.5 text-[10px] font-medium text-ai hover:bg-ai/10 hover:text-ai"
+    >
+      {reanalyze.isPending ? (
+        <Loader2 className="size-3 animate-spin" />
+      ) : (
+        <Sparkles className="size-3" />
+      )}
+      {reanalyze.isPending ? "Scoring…" : "Re-analyze"}
+    </Button>
+  );
+}
+
 export function IpoTable({
   data,
   detailed = false,
@@ -22,6 +62,7 @@ export function IpoTable({
   detailed?: boolean;
 }) {
   const [selected, setSelected] = useState<Ipo | null>(null);
+  const { isAdmin } = useSession();
 
   return (
     <>
@@ -115,15 +156,20 @@ export function IpoTable({
                   </div>
                 </TableCell>
                 <TableCell className="pr-4 text-right sm:pr-5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setSelected(ipo)}
-                    className="h-8 gap-1 rounded-lg border-primary/25 bg-primary/[0.08] px-2.5 text-[11px] font-medium text-primary hover:bg-primary/15 hover:text-primary"
-                  >
-                    Apply
-                    <ArrowUpRight className="size-3" />
-                  </Button>
+                  <div className="flex flex-col items-end gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelected(ipo)}
+                      className="h-8 gap-1 rounded-lg border-primary/25 bg-primary/[0.08] px-2.5 text-[11px] font-medium text-primary hover:bg-primary/15 hover:text-primary"
+                    >
+                      Apply
+                      <ArrowUpRight className="size-3" />
+                    </Button>
+                    {isAdmin && ipo.aiScore === 0 ? (
+                      <ReanalyzeButton ipo={ipo} />
+                    ) : null}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

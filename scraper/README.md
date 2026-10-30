@@ -18,7 +18,9 @@
 5. Calls the `analyze-ipo` Edge Function for every IPO it inserted in this run,
    so a fresh issue is graded (1-10 score, APPLY/WATCH/AVOID verdict and a
    one-line underwriting note) seconds after it appears instead of sitting at
-   `0.0` / `WATCH`.
+   `0.0` / `WATCH`. Existing issues are re-scored when their grey-market
+   premium changes or their subscription book moves by `IPO_AI_SUB_DELTA`
+   (0.5x by default), capped at `AI_MAX_ANALYSES` refreshes per run.
 
 It only writes market data. It creates IPO rows that are missing but never
 deletes anything, and it never touches users or holdings.
@@ -64,6 +66,7 @@ SUPABASE_SERVICE_ROLE_KEY=YOUR-SERVICE-ROLE-KEY
 AI_TRIGGER_PCT=1.5
 AI_MAX_ANALYSES=20
 AI_DELAY_SECONDS=1.0
+IPO_AI_SUB_DELTA=0.5
 REQUEST_TIMEOUT=20
 
 # Optional GMP feed (see "Grey-market premium" below)

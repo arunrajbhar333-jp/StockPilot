@@ -130,7 +130,7 @@ function buildPrompt(ipo: IpoRow): string {
     "Calibrate the score like this: 9-10 exceptional (rich demand or a large premium on a reasonably priced book), 7-8 good, 5-6 mixed or fully priced, 3-4 weak, 1-2 outright avoid.",
     "Judge pricing versus peers, the grey market premium, demand, issue size and float, and the risk of an SME issue with a tiny float.",
     "Never invent data that is not listed above. Treat a missing premium or an unreported subscription as a reason to lower conviction, and say so plainly.",
-    "The reason must be one or two concrete sentences, at most 240 characters, and must end with the action to take.",
+    "The reason must be a single sentence of at most 200 characters that names the grey market premium and the subscription figure, and ends with the action to take.",
   ];
 
   return lines.join("\n");
@@ -254,7 +254,7 @@ async function analyzeWithGemini(
   };
 }
 
-Deno.serve(async (req: Request) => {
+async function handle(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -408,4 +408,16 @@ Deno.serve(async (req: Request) => {
     source: "gemini",
     analyzedAt,
   });
+}
+
+Deno.serve(async (req: Request) => {
+  try {
+    return await handle(req);
+  } catch (error) {
+    // Anything unexpected (network, JSON, Supabase) still answers with JSON so
+    // the scraper logs a readable reason instead of a bare 500.
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("[analyze-ipo] unhandled error:", detail);
+    return json({ error: `IPO analysis failed: ${detail.slice(0, 240)}` }, 500);
+  }
 });

@@ -89,6 +89,9 @@ class Config:
     ai_trigger_pct: float = 1.5
     ai_max_analyses: int = 20
     ai_delay_seconds: float = 1.0
+    # An existing IPO is re-scored once its subscription book moves this much
+    # (in times) or its grey-market premium changes at all.
+    ipo_ai_sub_delta: float = 0.5
     gmp_api_url: str | None = None
     gmp_api_key: str | None = None
     dry_run: bool = False
@@ -132,6 +135,7 @@ def config_from_env(dry_run: bool, skip_ai: bool) -> Config:
         ai_trigger_pct=_env_number("AI_TRIGGER_PCT", 1.5),
         ai_max_analyses=int(_env_number("AI_MAX_ANALYSES", 20, int)),
         ai_delay_seconds=_env_number("AI_DELAY_SECONDS", 1.0),
+        ipo_ai_sub_delta=_env_number("IPO_AI_SUB_DELTA", 0.5),
         gmp_api_url=(os.getenv("IPO_GMP_API_URL") or "").strip() or None,
         gmp_api_key=(os.getenv("IPO_GMP_API_KEY") or "").strip() or None,
         dry_run=dry_run,
@@ -1065,15 +1069,40 @@ def match_ipo_row(company: str, rows: Sequence[dict[str, Any]]) -> dict[str, Any
     return best[1] if best else None
 
 
+def ipo_change_reason(
+    row: dict[str, Any], patch: dict[str, Any], config: Config
+) -> str | None:
+    """Why an existing issue deserves a fresh AI call, or None if nothing moved."""
+    stored_gmp = to_float(row.get("gmp")) or 0.0
+    new_gmp = to_float(patch.get("gmp"))
+    if new_gmp is not None and abs(new_gmp - stored_gmp) >= 0.01:
+        return f"GMP {stored_gmp:g} -> {new_gmp:g}"
+
+    stored_sub = to_float(row.get("subscription")) or 0.0
+    new_sub = to_float(patch.get("subscription"))
+    if new_sub is not None:
+        # The book opening is always worth a fresh call, however small the first
+        # print is.
+        if stored_sub <= 0 < new_sub:
+            return f"book opened at {new_sub:.2f}x"
+        if abs(new_sub - stored_sub) >= config.ipo_ai_sub_delta:
+            return f"subscription {stored_sub:.2f}x -> {new_sub:.2f}x"
+    return None
+
+
 def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
     """Insert live issues that are missing and refresh the ones already stored.
+
+    Every new issue is handed to analyze-ipo. An existing issue is re-scored
+    when its grey-market premium or subscription book moved materially, so the
+    score follows the demand instead of freezing at insertion time.
 
     Returns (rows written, rows skipped). Nothing is deleted: closed issues stay
     in the table so the tracker keeps its history.
     """
     rows = (
         client.table("ipos")
-        .select("id, company_name, type, gmp, gmp_pct")
+        .select("id, company_name, type, gmp, gmp_pct, subscription")
         .execute()
         .data
         or []
@@ -1096,6 +1125,8 @@ def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
     seen: set[str] = set()
     # (id, company) of rows created in this run, scored by analyze-ipo at the end.
     new_ipo_ids: list[tuple[str, str]] = []
+    # Existing rows whose GMP or subscription moved enough to re-score.
+    refresh_ids: list[tuple[str, str, str]] = []
 
     for issue in issues:
         key = normalise_company(issue.company)
@@ -1146,6 +1177,9 @@ def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
             patch["gmp_pct"] = round(effective_gmp / reference_price * 100, 2)
 
         if row is not None:
+            change = ipo_change_reason(row, patch, config)
+            if change:
+                refresh_ids.append((str(row["id"]), issue.company, change))
             if config.dry_run:
                 LOG.info("[dry-run] IPO update %s -> %s", issue.company, patch)
             else:
@@ -1198,22 +1232,37 @@ def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
         skipped,
     )
 
+    # Existing issues are only re-scored when the demand picture actually moved,
+    # and never more than AI_MAX_ANALYSES of them in one run.
+    refresh_queue = refresh_ids[: max(0, config.ai_max_analyses)]
+    if len(refresh_ids) > len(refresh_queue):
+        LOG.info(
+            "IPO AI refresh: %s issue(s) moved; scoring the first %s.",
+            len(refresh_ids),
+            len(refresh_queue),
+        )
+
     # Fresh rows land with ai_score 0.0 / WATCH, so grade them right away
     # instead of waiting for the next manual pass.
-    if new_ipo_ids and config.skip_ai:
-        LOG.info("IPO AI scoring skipped (--skip-ai).")
-    elif new_ipo_ids:
+    pending = [(ipo_id, company, "new issue") for ipo_id, company in new_ipo_ids]
+    pending.extend(refresh_queue)
+
+    if pending and config.skip_ai:
+        LOG.info("IPO AI scoring skipped (--skip-ai) for %s issue(s).", len(pending))
+    elif pending and config.dry_run:
+        for _, company, why in pending:
+            LOG.info("[dry-run] would score %s (%s).", company, why)
+    elif pending:
         LOG.info(
-            "IPO AI scoring: analysing %s new issue(s) via analyze-ipo.",
+            "IPO AI scoring: %s new, %s refreshed via analyze-ipo.",
             len(new_ipo_ids),
+            len(refresh_queue),
         )
         scored = 0
-        for ipo_id, company in new_ipo_ids:
+        for ipo_id, company, _ in pending:
             scored += request_ipo_analysis(config, ipo_id, company)
             time.sleep(max(0.0, config.ai_delay_seconds))
-        LOG.info(
-            "IPO AI scoring: %s/%s new issue(s) updated.", scored, len(new_ipo_ids)
-        )
+        LOG.info("IPO AI scoring: %s/%s issue(s) updated.", scored, len(pending))
 
     return (inserted + updated, skipped)
 
@@ -1264,7 +1313,7 @@ def request_ipo_analysis(config: Config, ipo_id: str, company: str) -> int:
 
     try:
         response = requests.post(
-            url, headers=headers, json={"ipo_id": ipo_id}, timeout=90
+            url, headers=headers, json={"ipoId": ipo_id}, timeout=90
         )
     except requests.RequestException as error:
         LOG.warning("IPO AI call failed for %s: %s", company, error)
