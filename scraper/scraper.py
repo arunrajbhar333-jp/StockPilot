@@ -3,7 +3,9 @@
 
 Fetches index levels, live IPO data and equity prices, writes them to Supabase
 with the service role key, then asks the analyze-holding Edge Function to
-refresh the AI verdict for positions that moved significantly.
+refresh the AI verdict for positions that moved significantly. Every IPO it
+inserts is immediately handed to analyze-ipo, which grades the issue with
+Gemini and stores the score, verdict and underwriting note on the row.
 
 IPO data comes from NSE first. NSE blocks most datacenter IPs (GitHub Actions
 routinely gets 401/403 or an empty payload), so when it returns no usable
@@ -1092,6 +1094,8 @@ def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
     updated = 0
     skipped = 0
     seen: set[str] = set()
+    # (id, company) of rows created in this run, scored by analyze-ipo at the end.
+    new_ipo_ids: list[tuple[str, str]] = []
 
     for issue in issues:
         key = normalise_company(issue.company)
@@ -1175,13 +1179,15 @@ def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
             issue.close_date.isoformat() if issue.close_date else "unknown",
         )
         if created:
+            new_id = str(created[0]["id"])
             rows.append(
                 {
-                    "id": created[0]["id"],
+                    "id": new_id,
                     "company_name": issue.company,
                     "gmp": patch.get("gmp"),
                 }
             )
+            new_ipo_ids.append((new_id, issue.company))
         inserted += 1
 
     LOG.info(
@@ -1191,7 +1197,106 @@ def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
         updated,
         skipped,
     )
+
+    # Fresh rows land with ai_score 0.0 / WATCH, so grade them right away
+    # instead of waiting for the next manual pass.
+    if new_ipo_ids and config.skip_ai:
+        LOG.info("IPO AI scoring skipped (--skip-ai).")
+    elif new_ipo_ids:
+        LOG.info(
+            "IPO AI scoring: analysing %s new issue(s) via analyze-ipo.",
+            len(new_ipo_ids),
+        )
+        scored = 0
+        for ipo_id, company in new_ipo_ids:
+            scored += request_ipo_analysis(config, ipo_id, company)
+            time.sleep(max(0.0, config.ai_delay_seconds))
+        LOG.info(
+            "IPO AI scoring: %s/%s new issue(s) updated.", scored, len(new_ipo_ids)
+        )
+
     return (inserted + updated, skipped)
+
+
+def rescore_ipos(client: Client, config: Config) -> int:
+    """One-off backfill: grade issues that still sit at the default 0.0 / WATCH.
+
+    Rows inserted before analyze-ipo existed never went through the AI pass, so
+    `--rescore-ipos` scores up to AI_MAX_ANALYSES of them per run.
+    """
+    rows = (
+        client.table("ipos")
+        .select("id, company_name")
+        .eq("ai_score", 0)
+        .limit(max(0, config.ai_max_analyses))
+        .execute()
+        .data
+        or []
+    )
+
+    if not rows:
+        LOG.info("IPO rescore: every issue already has an AI score.")
+        return 0
+
+    LOG.info("IPO rescore: %s issue(s) at 0.0 / WATCH.", len(rows))
+    rescored = 0
+    for row in rows:
+        if config.dry_run:
+            LOG.info("[dry-run] would score %s.", row.get("company_name"))
+            continue
+        rescored += request_ipo_analysis(
+            config, str(row["id"]), str(row.get("company_name") or "issue")
+        )
+        time.sleep(max(0.0, config.ai_delay_seconds))
+
+    LOG.info("IPO rescore: %s/%s issue(s) updated.", rescored, len(rows))
+    return rescored
+
+
+def request_ipo_analysis(config: Config, ipo_id: str, company: str) -> int:
+    """Ask analyze-ipo to score one issue. Returns 1 when the row was updated."""
+    url = f"{config.supabase_url}/functions/v1/analyze-ipo"
+    headers = {
+        "Authorization": f"Bearer {config.service_role_key}",
+        "apikey": config.service_role_key,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(
+            url, headers=headers, json={"ipo_id": ipo_id}, timeout=90
+        )
+    except requests.RequestException as error:
+        LOG.warning("IPO AI call failed for %s: %s", company, error)
+        return 0
+
+    if response.status_code >= 400:
+        LOG.warning(
+            "IPO AI call for %s returned %s: %s",
+            company,
+            response.status_code,
+            response.text[:200].replace("\n", " "),
+        )
+        return 0
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    if payload.get("skipped"):
+        LOG.warning(
+            "IPO AI call for %s skipped: %s", company, payload.get("reason")
+        )
+        return 0
+
+    LOG.info(
+        "%s scored: %s at %s/10",
+        company,
+        payload.get("verdict", "?"),
+        payload.get("aiScore", "?"),
+    )
+    return 1
 
 
 def sync_portfolio(client: Client, config: Config) -> dict[str, Any]:
@@ -1364,12 +1469,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--skip-ai",
         action="store_true",
-        help="Update prices but do not invoke analyze-holding.",
+        help="Update prices and IPOs but invoke neither analyze-holding nor analyze-ipo.",
     )
     parser.add_argument(
         "--skip-ipos",
         action="store_true",
         help="Skip the NSE IPO sync for this run.",
+    )
+    parser.add_argument(
+        "--rescore-ipos",
+        action="store_true",
+        help=(
+            "Backfill: score existing IPO rows still at the default 0.0 / WATCH "
+            "(up to AI_MAX_ANALYSES per run)."
+        ),
     )
     parser.add_argument(
         "--skip-indices",
@@ -1416,6 +1529,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             indices_written = sync_indices(client, config)
         if not args.skip_ipos:
             ipo_counts = sync_ipos(client, config)
+        if args.rescore_ipos:
+            if config.skip_ai:
+                LOG.info("IPO rescore skipped (--skip-ai).")
+            else:
+                rescore_ipos(client, config)
         portfolio_summary = sync_portfolio(client, config)
     except Exception:
         LOG.exception("Market sync aborted.")

@@ -88,6 +88,7 @@ supabase functions deploy admin-create-user
 supabase functions deploy admin-update-user
 supabase functions deploy admin-delete-user
 supabase functions deploy analyze-holding
+supabase functions deploy analyze-ipo
 supabase functions deploy market-mood
 ```
 
@@ -103,6 +104,16 @@ the same fallback if the function is not deployed yet.
 Python market sync can refresh any holding. In that mode it never writes a
 placeholder: a missing key or a Gemini failure returns an error and the previous
 verdict is kept. See [`../scraper/README.md`](../scraper/README.md).
+
+`analyze-ipo` takes an `ipoId` (or `ipo_id`) and grades one issue: it reads the
+row, asks Gemini for a 1-10 score, an `APPLY` / `WATCH` / `AVOID` verdict and a
+one-line underwriting note, then writes `ai_score`, `verdict` and `thesis` back
+to `public.ipos` — the column the IPO dialog already renders as the **AI
+underwriting note**. Callers must be the service role key (the scraper) or an
+active administrator, because a verdict is shared by every member. It reads the
+same `GEMINI_API_KEY` / `GEMINI_MODEL` secrets; without a key it returns
+`{ skipped: true }` and leaves the row at its `0.0` / `WATCH` default rather than
+inventing a score.
 
 Until these functions are deployed, the Create user, Edit user and Remove user
 actions will report that the function is unreachable.

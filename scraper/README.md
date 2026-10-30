@@ -15,6 +15,10 @@
 4. Calls the `analyze-holding` Edge Function for any holding whose price moved
    by at least `AI_TRIGGER_PCT` since the last sync (or that has never been
    analysed), so Gemini can refresh the verdict.
+5. Calls the `analyze-ipo` Edge Function for every IPO it inserted in this run,
+   so a fresh issue is graded (1-10 score, APPLY/WATCH/AVOID verdict and a
+   one-line underwriting note) seconds after it appears instead of sitting at
+   `0.0` / `WATCH`.
 
 It only writes market data. It creates IPO rows that are missing but never
 deletes anything, and it never touches users or holdings.
@@ -32,18 +36,21 @@ supabase/migrations/20261029190000_market_indices.sql
 
 The first adds `portfolio.ai_source`; the second creates `market_indices`.
 
-### 2. Redeploy `analyze-holding`
+### 2. Redeploy `analyze-holding` and deploy `analyze-ipo`
 
-The function now accepts the **service role key** as a system caller (it still
+`analyze-holding` accepts the **service role key** as a system caller (it still
 accepts a member's JWT and enforces ownership for those calls). Without this
-deploy, step 4 will return `401`:
+deploy, step 4 will return `401`. `analyze-ipo` must be deployed as well, or
+step 5 logs a `404` and the new issues keep their default score:
 
 ```bash
 supabase functions deploy analyze-holding
+supabase functions deploy analyze-ipo
 ```
 
 `GEMINI_API_KEY` should already be set under **Edge Functions → Secrets**. When
-it is missing, system calls return `skipped` and existing verdicts are kept.
+it is missing, system calls return `skipped` and existing verdicts and IPO
+scores are kept. `--skip-ai` turns both AI steps off for a run.
 
 ### 3. Environment
 
@@ -80,7 +87,16 @@ python scraper.py                  # real sync
 ```
 
 Useful flags: `--dry-run`, `--skip-ai`, `--skip-ipos`, `--skip-indices`,
-`--verbose`.
+`--rescore-ipos`, `--verbose`.
+
+`--rescore-ipos` is a one-off backfill for rows that were inserted before
+`analyze-ipo` existed: it scores the issues still sitting at `0.0` / `WATCH`,
+up to `AI_MAX_ANALYSES` per run, so a populated table catches up without
+reinserting anything:
+
+```bash
+python scraper.py --rescore-ipos --skip-indices --skip-ipos
+```
 
 Expected tail of a healthy run:
 
@@ -199,6 +215,8 @@ the scraper calls it).
 | `Missing required environment variables` | Secret/`.env` not loaded in the runner. |
 | `market_indices write failed` | `20261029190000_market_indices.sql` not applied. |
 | `AI call ... 401` | `analyze-holding` not redeployed with the service-role path. |
+| `IPO AI call ... 404` | `analyze-ipo` is not deployed yet. |
+| `IPO AI call ... skipped` | `GEMINI_API_KEY` is not set; the IPO keeps `0.0` / `WATCH`. |
 | `AI call ... skipped: GEMINI_API_KEY is not set` | Add the key in Edge Function secrets. |
 | `ipos` table stays empty | Check the log for `IPOWatch upcoming list: 0` — the site changed its markup, or the run used `--skip-ipos`. Otherwise the row is being inserted; refresh the table. |
 | Most live IPOs missing | NSE's list only covers NSE issues; the IPOWatch supplement fills BSE SME. If `IPOWatch added 0` appears, the site was unreachable from the runner. |
