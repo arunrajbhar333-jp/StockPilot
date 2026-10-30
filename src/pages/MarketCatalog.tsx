@@ -14,7 +14,6 @@ import { AiScore, VerdictBadge } from "@/components/signals";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SkeletonText } from "@/components/ui/skeleton-text";
 import {
   Table,
   TableBody,
@@ -23,9 +22,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { Sparkline } from "@/components/sparkline";
+import { AiScore, VerdictBadge } from "@/components/signals";
+import { Search, SearchX, Bot, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { useChatStore } from "@/store/use-chat-store";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from "@/components/ui/select";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 
 interface CatalogStock {
   id: string;
@@ -84,15 +101,15 @@ export default function MarketCatalog() {
   const { openChat } = useChatStore();
 
   const sectors = useMemo(
-    () => ["All sectors", ...Array.from(new Set((catalog ?? []).map((s) => s.sector ?? "").filter(Boolean)))],
-    [catalog ?? []],
+    () => ["All sectors", ...Array.from(new Set(catalog.map((s: CatalogStock) => s.sector ?? "").filter(Boolean)))],
+    [catalog],
   );
   const catalogError = error instanceof Error ? error.message : status === "error" ? "Failed to load the market catalog." : null;
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
 
-    return (catalog ?? [])
-      .filter((stock) => {
+    return catalog
+      .filter((stock: CatalogStock) => {
         const sectorMatch =
           sector === "All sectors" || stock.sector === sector;
         const searchMatch =
@@ -102,8 +119,21 @@ export default function MarketCatalog() {
             .includes(needle);
         return sectorMatch && searchMatch;
       })
-      .sort((a, b) => (b.aiScore ?? 0) - (a.aiScore ?? 0));
+      .sort((a: CatalogStock, b: CatalogStock) => (b.aiScore ?? 0) - (a.aiScore ?? 0));
   }, [query, sector, catalog]);
+
+  if (!catalog) {
+    return (
+      <div className="space-y-5 sm:space-y-6">
+        <PageHeader
+          eyebrow="Equities · no data"
+          title="Market catalog"
+          description="The catalogue is still loading."
+        />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
 
   const hasFilters = query.trim().length > 0 || sector !== "All sectors";
   const revisionStatus =
@@ -280,7 +310,7 @@ export default function MarketCatalog() {
                       "30-day trend",
                     ].map((heading) => (
                       <TableHead
-                        key={heading}
+                        key={heading as string}
                         className={cn(
                           "text-[9px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase",
                           (heading === "Price" || heading === "Day change") &&
@@ -307,8 +337,9 @@ export default function MarketCatalog() {
                           type="button"
                           onClick={() =>
                             openChat(
-                              `Analyze ${stock.stock_name} (${stock.symbol}). Should I buy/hold/sell this? Give me the final verdict.`,
+                              `Analyze ${stock.stock_name ?? "unknown"} (${stock.symbol ?? "symbol"}). Should I buy/hold/sell this? Give me the final verdict.`,
                             )
+                          }
                           }
                           className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
                           title="Ask AI about this stock"
@@ -331,12 +362,10 @@ export default function MarketCatalog() {
                       <TableCell>
                         <VerdictBadge verdict={stock.ai_verdict} />
                       </TableCell>
-                      <TableCell className="hidden pr-5 text-right xl:table-cell">
-                        <Sparkline
+                      <TableCell className="hidden pr-5 text-right xl:table-cell">                        <Sparkline
                           data={stock.spark}
-                          positive={stock.changePct >= 0}
-                        className="ml-auto h-8 w-20"
-                      />
+                          positive={(stock.changePct ?? 0) >= 0}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -347,14 +376,13 @@ export default function MarketCatalog() {
             <div className="divide-y divide-white/[0.05] md:hidden">
               {visible.map((stock) => (                    <div key={stock.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <StockIdentity stock={stock} />
-                    <div className="flex items-center gap-1.5">
+                    <StockIdentity stock={stock} />                    <div className="flex items-center gap-1.5">
                       <VerdictBadge verdict={stock.ai_verdict} />
                       <button
                         type="button"
                         onClick={() =>
                           openChat(
-                            `Analyze $                      {stock.stock_name} (${stock.symbol}). Should I buy/hold/sell this? Give me the final verdict.`,
+                            `Analyze ${stock.stock_name ?? "unknown"} (${stock.symbol ?? "symbol"}). Should I buy/hold/sell this? Give me the final verdict.`,
                           )
                         }
                         className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
