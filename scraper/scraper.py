@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """StockPilot market sync.
 
-Fetches index levels, NSE IPO subscription data and live equity prices, writes
-them to Supabase with the service role key, then asks the analyze-holding Edge
-Function to refresh the AI verdict for positions that moved significantly.
+Fetches index levels, live IPO data and equity prices, writes them to Supabase
+with the service role key, then asks the analyze-holding Edge Function to
+refresh the AI verdict for positions that moved significantly.
+
+IPO data comes from NSE first. NSE blocks most datacenter IPs (GitHub Actions
+routinely gets 401/403 or an empty payload), so when it returns no usable
+issues the scraper falls back to IPOWatch's public pages, which also carry the
+grey-market premium and total subscription that NSE does not publish.
 
 Run:
     python scraper/scraper.py --dry-run     # fetch + log, write nothing
@@ -30,6 +35,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -46,6 +52,12 @@ YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 NSE_HOME = "https://www.nseindia.com/market-data/all-upcoming-issues-ipo"
 NSE_UPCOMING = "https://www.nseindia.com/api/all-upcoming-issues?category=ipo"
 NSE_DETAIL = "https://www.nseindia.com/api/ipo-detail?symbol={symbol}"
+
+# Fallback source: server-rendered WordPress tables, no JavaScript needed.
+IPOWATCH_BASE = "https://ipowatch.in"
+IPOWATCH_UPCOMING = f"{IPOWATCH_BASE}/upcoming-ipo-list/"
+IPOWATCH_GMP = f"{IPOWATCH_BASE}/ipo-grey-market-premium-latest-ipo-gmp/"
+IPOWATCH_SUBSCRIPTION = f"{IPOWATCH_BASE}/ipo-subscription-status-today/"
 
 BROWSER_HEADERS = {
     "User-Agent": (
@@ -347,6 +359,10 @@ class LiveIpo:
     price_high: float | None
     subscription: float | None
     status: str
+    # IPOWatch publishes GMP directly; the NSE path leaves this empty and relies
+    # on the optional IPO_GMP_API_URL feed instead.
+    gmp: float | None = None
+    issue_size: str | None = None
 
     @property
     def issue_type(self) -> str:
@@ -401,6 +417,11 @@ def fetch_live_ipos(session: requests.Session, config: Config) -> list[LiveIpo]:
             )
         )
 
+    LOG.info(
+        "NSE returned %s live issues (%s in the raw payload).",
+        len(issues),
+        len(payload),
+    )
     return issues
 
 
@@ -431,6 +452,406 @@ def fetch_ipo_subscription(
             total = to_float(row.get("noOfTotalMeant"))
             return round(total, 2) if total is not None else None
     return None
+
+
+# --------------------------------------------------------------------------- #
+# IPOWatch fallback
+# --------------------------------------------------------------------------- #
+# NSE serves its API only to browser-like sessions from Indian consumer IPs;
+# datacenter runners usually get 401/403 or an empty array. IPOWatch publishes
+# the same issues as plain server-rendered tables, including GMP and total
+# subscription, so it is a complete fallback rather than a partial one.
+
+_MONTHS = {
+    datetime(2000, month, 1).strftime("%b").lower(): month for month in range(1, 13)
+}
+
+_STATUS_SUFFIX = re.compile(
+    r"\s+(?:open|closed|upcoming|closing today|listed|allotment)\s*$", re.IGNORECASE
+)
+
+
+class _TableParser(HTMLParser):
+    """Collects every <table> as a list of rows of whitespace-normalised cells."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tables: list[list[list[str]]] = []
+        self._table: list[list[str]] | None = None
+        self._row: list[str] | None = None
+        self._cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "table":
+            self._table = []
+        elif tag == "tr" and self._table is not None:
+            self._row = []
+        elif tag in ("td", "th") and self._row is not None:
+            self._cell = []
+        elif tag == "br" and self._cell is not None:
+            # IPOWatch puts the status badge after a <br> in the company cell.
+            self._cell.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "table" and self._table is not None:
+            self.tables.append(self._table)
+            self._table = None
+            self._row = None
+            self._cell = None
+        elif tag == "tr" and self._row is not None and self._table is not None:
+            self._table.append(self._row)
+            self._row = None
+            self._cell = None
+        elif tag in ("td", "th") and self._cell is not None and self._row is not None:
+            self._row.append(re.sub(r"\s+", " ", "".join(self._cell)).strip())
+            self._cell = None
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell.append(data)
+
+
+def fetch_html(url: str, config: Config) -> str | None:
+    headers = {**BROWSER_HEADERS, "Accept": "text/html,application/xhtml+xml"}
+    try:
+        response = requests.get(url, headers=headers, timeout=config.request_timeout)
+        response.raise_for_status()
+        LOG.debug("Fetched %s (%s bytes).", url, len(response.text))
+        return response.text
+    except requests.RequestException as error:
+        LOG.warning("IPOWatch request failed for %s: %s", url, error)
+        return None
+
+
+def parse_html_tables(html: str) -> list[list[list[str]]]:
+    parser = _TableParser()
+    try:
+        parser.feed(html)
+        parser.close()
+    except Exception as error:  # noqa: BLE001 - malformed markup is not fatal
+        LOG.warning("Could not parse an IPOWatch page: %s", error)
+    return parser.tables
+
+
+def clean_company_name(value: str) -> str:
+    return _STATUS_SUFFIX.sub("", (value or "").strip()).strip(" -–\t")
+
+
+def column_index(headers: Sequence[str], *names: str) -> int | None:
+    """Header-name lookup: ignores punctuation/case, e.g. 'Total (X)' -> 'total x'."""
+    normalised = [re.sub(r"[^a-z ]", "", header.lower()).strip() for header in headers]
+    for name in names:
+        if name in normalised:
+            return normalised.index(name)
+    return None
+
+
+def parse_ipowatch_dates(value: str, today: date) -> tuple[date | None, date | None]:
+    """'29-2 Nov' -> (2026-10-29, 2026-11-02); '28-30 Oct' -> same-month range.
+
+    IPOWatch omits the year and renders one rolling list, so the current year is
+    assumed. Anything more than ~7 months ahead is last year's listing, and a
+    window almost a year old is next year's calendar (e.g. "2-4 Jan" read in
+    late December). A start day above the end day means the window opened in the
+    previous month, so December/January windows span two years.
+    """
+    text = (value or "").strip()
+    match = re.search(r"(\d{1,2})\s*[-–]\s*(\d{1,2})\s+([A-Za-z]{3,9})", text)
+    if not match:
+        return (None, None)
+
+    start_day = int(match.group(1))
+    end_day = int(match.group(2))
+    month = _MONTHS.get(match.group(3)[:3].lower())
+    if month is None:
+        return (None, None)
+
+    def build(year: int) -> tuple[date, date] | None:
+        start_month, start_year = month, year
+        if start_day > end_day:
+            start_month = 12 if month == 1 else month - 1
+            start_year = year - 1 if month == 1 else year
+        try:
+            return (
+                date(start_year, start_month, start_day),
+                date(year, month, end_day),
+            )
+        except ValueError:
+            return None
+
+    window = build(today.year)
+    if window is None:
+        return (None, None)
+
+    offset = (window[1] - today).days
+    if offset > 200:
+        window = build(today.year - 1) or window
+    elif offset < -330:
+        window = build(today.year + 1) or window
+
+    return window
+
+
+def parse_ipowatch_upcoming(
+    tables: Sequence[list[list[str]]], today: date
+) -> list[dict[str, Any]]:
+    """Both upcoming tables: mainboard ('IPO Date') and SME ('Platform')."""
+    records: list[dict[str, Any]] = []
+
+    for table in tables:
+        if len(table) < 2:
+            continue
+
+        headers = table[0]
+        name_col = column_index(headers, "company", "ipo", "ipo name")
+        date_col = column_index(headers, "ipo date", "date")
+        band_col = column_index(headers, "ipo price band", "price band")
+        if name_col is None or date_col is None or band_col is None:
+            continue
+
+        size_col = column_index(headers, "ipo size")
+        platform_col = column_index(headers, "platform")
+
+        for row in table[1:]:
+            if len(row) <= max(name_col, date_col, band_col):
+                continue
+
+            company = clean_company_name(row[name_col])
+            if len(company) < 2:
+                continue
+
+            open_date, close_date = parse_ipowatch_dates(row[date_col], today)
+            if close_date is None:
+                LOG.debug("Skipping %s: could not read dates from %r.", company, row[date_col])
+                continue
+            if close_date < today:
+                continue
+
+            platform = row[platform_col] if platform_col is not None and len(row) > platform_col else ""
+            price_low, price_high = parse_price_band(row[band_col])
+
+            records.append(
+                {
+                    "company": company,
+                    "type": "SME" if "sme" in platform.lower() else "Mainboard",
+                    "open_date": open_date,
+                    "close_date": close_date,
+                    "price_low": price_low,
+                    "price_high": price_high,
+                    "issue_size": (row[size_col].strip() if size_col is not None and len(row) > size_col else None) or None,
+                }
+            )
+
+    return records
+
+
+def parse_ipowatch_gmp(tables: Sequence[list[list[str]]]) -> dict[str, float]:
+    quotes: dict[str, float] = {}
+    for table in tables:
+        if len(table) < 2:
+            continue
+        headers = table[0]
+        name_col = column_index(headers, "company", "ipo", "ipo name")
+        gmp_col = column_index(headers, "gmp", "last gmp", "gmp today")
+        if name_col is None or gmp_col is None:
+            continue
+
+        for row in table[1:]:
+            if len(row) <= max(name_col, gmp_col):
+                continue
+            company = clean_company_name(row[name_col])
+            value = to_float(row[gmp_col])
+            if company and value is not None:
+                quotes[normalise_company(company)] = value
+    return quotes
+
+
+def parse_ipowatch_subscription(tables: Sequence[list[list[str]]]) -> dict[str, float]:
+    subscriptions: dict[str, float] = {}
+    for table in tables:
+        if len(table) < 2:
+            continue
+        headers = table[0]
+        name_col = column_index(headers, "ipo name", "company", "ipo")
+        total_col = column_index(headers, "total x", "total", "total subscription")
+        if name_col is None or total_col is None:
+            continue
+
+        for row in table[1:]:
+            if len(row) <= max(name_col, total_col):
+                continue
+            company = clean_company_name(row[name_col])
+            value = to_float(row[total_col])
+            if company and value is not None:
+                subscriptions[normalise_company(company)] = value
+    return subscriptions
+
+
+def lookup_by_company(values: dict[str, float], company: str) -> float | None:
+    """Exact normalised match first, then the same substring rule match_ipo_row uses."""
+    target = normalise_company(company)
+    if not target:
+        return None
+    if target in values:
+        return values[target]
+    for candidate, value in values.items():
+        if len(candidate) >= 6 and (candidate in target or target in candidate):
+            return value
+    return None
+
+
+def ipowatch_symbol(company: str) -> str:
+    """IPOWatch has no NSE symbol; keep a stable slug for logs and GMP matching."""
+    slug = re.sub(r"[^A-Z0-9]", "", company.upper())[:14]
+    return slug or "IPO"
+
+
+def fetch_ipowatch(config: Config) -> tuple[list[LiveIpo], dict[str, float]]:
+    """All live/upcoming issues plus the raw GMP map (used to top up NSE rows)."""
+    today = now_ist().date()
+
+    upcoming_html = fetch_html(IPOWATCH_UPCOMING, config)
+    if not upcoming_html:
+        LOG.error("IPOWatch fallback failed: the upcoming-IPO list could not be fetched.")
+        return ([], {})
+
+    records = parse_ipowatch_upcoming(parse_html_tables(upcoming_html), today)
+    if not records:
+        LOG.error("IPOWatch fallback failed: no live or upcoming issues were parsed.")
+        return ([], {})
+
+    sme_count = sum(1 for record in records if record["type"] == "SME")
+    LOG.info(
+        "IPOWatch upcoming list: %s open/upcoming issues (%s SME, %s mainboard).",
+        len(records),
+        sme_count,
+        len(records) - sme_count,
+    )
+
+    quotes: dict[str, float] = {}
+    gmp_html = fetch_html(IPOWATCH_GMP, config)
+    if gmp_html:
+        quotes = parse_ipowatch_gmp(parse_html_tables(gmp_html))
+        LOG.info("IPOWatch GMP page: %s quotes parsed.", len(quotes))
+    else:
+        LOG.warning("IPOWatch GMP page unavailable; GMP values will be left as stored.")
+
+    subscriptions: dict[str, float] = {}
+    subscription_html = fetch_html(IPOWATCH_SUBSCRIPTION, config)
+    if subscription_html:
+        subscriptions = parse_ipowatch_subscription(parse_html_tables(subscription_html))
+        LOG.info("IPOWatch subscription page: %s subscriptions parsed.", len(subscriptions))
+    else:
+        LOG.warning(
+            "IPOWatch subscription page unavailable; subscription will be left as stored."
+        )
+
+    issues: list[LiveIpo] = []
+    gmp_matched = 0
+    subscription_matched = 0
+
+    for record in records:
+        company = str(record["company"])
+        gmp = lookup_by_company(quotes, company)
+        if gmp is not None:
+            gmp_matched += 1
+
+        status = derive_status(record["open_date"], record["close_date"], today)
+        # Books that have not opened yet carry no subscription; the subscription
+        # page may still hold an older issue under a similar name.
+        subscription = None
+        if status != "Upcoming":
+            subscription = lookup_by_company(subscriptions, company)
+            if subscription is not None:
+                subscription_matched += 1
+
+        issues.append(
+            LiveIpo(
+                company=company,
+                symbol=ipowatch_symbol(company),
+                series="SM" if record["type"] == "SME" else "EQ",
+                open_date=record["open_date"],
+                close_date=record["close_date"],
+                price_low=record["price_low"],
+                price_high=record["price_high"],
+                subscription=subscription,
+                status=status,
+                gmp=gmp,
+                issue_size=record["issue_size"],
+            )
+        )
+
+    LOG.info(
+        "IPOWatch matched GMP for %s/%s issues and subscription for %s/%s.",
+        gmp_matched,
+        len(issues),
+        subscription_matched,
+        len(issues),
+    )
+    return (issues, quotes)
+
+
+def apply_ipowatch_gmp(quotes: dict[str, float], issues: Sequence[LiveIpo]) -> int:
+    """NSE never publishes GMP; fill any missing premium from the IPOWatch map."""
+    filled = 0
+    for issue in issues:
+        if issue.gmp is not None:
+            continue
+        value = lookup_by_company(quotes, issue.company)
+        if value is not None:
+            issue.gmp = value
+            filled += 1
+    return filled
+
+
+def fetch_ipos(config: Config) -> tuple[list[LiveIpo], str]:
+    """NSE first; IPOWatch supplies what NSE blocks, omits, or never publishes.
+
+    NSE's list only carries NSE issues and has no GMP, so IPOWatch is always
+    read as a supplement. When NSE is blocked the supplement becomes the whole
+    dataset, which is the common case on GitHub Actions runners.
+    """
+    session = nse_session(config.request_timeout)
+    try:
+        nse_issues = fetch_live_ipos(session, config)
+    except Exception as error:  # noqa: BLE001 - NSE is best-effort
+        LOG.warning("NSE IPO fetch raised: %s", error)
+        nse_issues = []
+
+    ipowatch_issues, quotes = fetch_ipowatch(config)
+
+    if not nse_issues:
+        LOG.warning(
+            "NSE returned 0 usable issues - using the IPOWatch fallback (%s issues).",
+            len(ipowatch_issues),
+        )
+        return (ipowatch_issues, "ipowatch")
+
+    LOG.info("Using NSE as the primary IPO source (%s issues).", len(nse_issues))
+
+    filled = apply_ipowatch_gmp(quotes, nse_issues)
+    if filled:
+        LOG.info(
+            "IPOWatch filled GMP for %s/%s NSE issues.", filled, len(nse_issues)
+        )
+
+    known = {normalise_company(issue.company) for issue in nse_issues}
+    extra: list[LiveIpo] = []
+    for issue in ipowatch_issues:
+        key = normalise_company(issue.company)
+        if not key or key in known:
+            continue
+        known.add(key)
+        extra.append(issue)
+
+    if extra:
+        LOG.info(
+            "IPOWatch added %s live issues that NSE did not list (mostly BSE SME).",
+            len(extra),
+        )
+        nse_issues.extend(extra)
+
+    return (nse_issues, "nse+ipowatch" if extra else "nse")
 
 
 # --------------------------------------------------------------------------- #
@@ -643,6 +1064,11 @@ def match_ipo_row(company: str, rows: Sequence[dict[str, Any]]) -> dict[str, Any
 
 
 def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
+    """Insert live issues that are missing and refresh the ones already stored.
+
+    Returns (rows written, rows skipped). Nothing is deleted: closed issues stay
+    in the table so the tracker keeps its history.
+    """
     rows = (
         client.table("ipos")
         .select("id, company_name, type, gmp, gmp_pct")
@@ -650,26 +1076,38 @@ def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
         .data
         or []
     )
-    if not rows:
-        LOG.info("No IPO rows in Supabase; nothing to update.")
-        return (0, 0)
+    LOG.info("Supabase ipos table holds %s rows before the sync.", len(rows))
 
-    session = nse_session(config.request_timeout)
-    issues = fetch_live_ipos(session, config)
+    issues, source = fetch_ipos(config)
     gmp_index = fetch_gmp(config)
 
     if not issues:
-        LOG.warning("No live NSE issues were returned; IPO sync skipped.")
+        LOG.error(
+            "No live IPO data from NSE or IPOWatch; the ipos table was left unchanged."
+        )
         return (0, 0)
 
+    today = now_ist().date()
+    inserted = 0
     updated = 0
-    unmatched: list[str] = []
+    skipped = 0
+    seen: set[str] = set()
 
     for issue in issues:
-        row = match_ipo_row(issue.company, rows)
-        if row is None:
-            unmatched.append(f"{issue.company} ({issue.symbol})")
+        key = normalise_company(issue.company)
+        if not key or key in seen:
+            skipped += 1
             continue
+        seen.add(key)
+
+        if issue.close_date and issue.close_date < today:
+            LOG.debug(
+                "Skipping %s: the issue closed on %s.", issue.company, issue.close_date
+            )
+            skipped += 1
+            continue
+
+        row = match_ipo_row(issue.company, rows)
 
         patch: dict[str, Any] = {
             "type": issue.issue_type,
@@ -687,28 +1125,73 @@ def sync_ipos(client: Client, config: Config) -> tuple[int, int]:
         if issue.price_low is not None and issue.price_high is not None:
             patch["price_band_low"] = issue.price_low
             patch["price_band_high"] = issue.price_high
+        if issue.issue_size:
+            patch["issue_size"] = issue.issue_size
 
+        # A configured GMP provider wins; otherwise use the premium IPOWatch
+        # publishes, and only then leave the stored value alone.
         gmp_quote = lookup_gmp(gmp_index, issue)
         if gmp_quote:
             patch["gmp"] = round(gmp_quote.gmp, 2)
+        elif issue.gmp is not None:
+            patch["gmp"] = round(issue.gmp, 2)
 
-        effective_gmp = to_float(patch.get("gmp", row.get("gmp")))
+        effective_gmp = to_float(patch.get("gmp", row.get("gmp") if row else 0))
         reference_price = issue.price_high or (gmp_quote.price_high if gmp_quote else None)
         if effective_gmp is not None and reference_price and reference_price > 0:
             patch["gmp_pct"] = round(effective_gmp / reference_price * 100, 2)
 
+        if row is not None:
+            if config.dry_run:
+                LOG.info("[dry-run] IPO update %s -> %s", issue.company, patch)
+            else:
+                client.table("ipos").update(patch).eq("id", row["id"]).execute()
+                LOG.debug("Updated IPO %s (%s).", issue.company, patch)
+            rows = [item for item in rows if item["id"] != row["id"]]
+            updated += 1
+            continue
+
+        payload: dict[str, Any] = {"company_name": issue.company, **patch}
+
         if config.dry_run:
-            LOG.info("[dry-run] IPO %s -> %s", issue.company, patch)
-        else:
-            client.table("ipos").update(patch).eq("id", row["id"]).execute()
-        rows = [item for item in rows if item["id"] != row["id"]]
-        updated += 1
+            LOG.info("[dry-run] IPO insert %s -> %s", issue.company, payload)
+            inserted += 1
+            continue
 
-    LOG.info("IPO sync: %s updated, %s unmatched.", updated, len(unmatched))
-    for name in unmatched:
-        LOG.info("  unmatched live issue: %s", name)
+        try:
+            created = (
+                client.table("ipos").insert(payload).select("id").execute().data or []
+            )
+        except Exception as error:  # noqa: BLE001 - one bad row must not stop the run
+            LOG.error("Could not insert IPO %s: %s", issue.company, error)
+            skipped += 1
+            continue
 
-    return (updated, len(unmatched))
+        LOG.info(
+            "Inserted IPO %s (%s, %s, closes %s).",
+            issue.company,
+            issue.issue_type,
+            issue.status,
+            issue.close_date.isoformat() if issue.close_date else "unknown",
+        )
+        if created:
+            rows.append(
+                {
+                    "id": created[0]["id"],
+                    "company_name": issue.company,
+                    "gmp": patch.get("gmp"),
+                }
+            )
+        inserted += 1
+
+    LOG.info(
+        "IPO sync via %s: %s inserted, %s updated, %s skipped.",
+        source.upper(),
+        inserted,
+        updated,
+        skipped,
+    )
+    return (inserted + updated, skipped)
 
 
 def sync_portfolio(client: Client, config: Config) -> dict[str, Any]:
@@ -939,7 +1422,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     LOG.info(
-        "Done in %.1fs | indices %s | IPOs %s updated / %s unmatched | "
+        "Done in %.1fs | indices %s | IPOs %s written / %s skipped | "
         "portfolio %s rows, %s symbols, %s unquoted | AI %s",
         time.monotonic() - started,
         indices_written,

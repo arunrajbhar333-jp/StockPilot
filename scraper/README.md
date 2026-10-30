@@ -5,15 +5,19 @@
 1. Fetches **NIFTY 50**, **SENSEX** and **BANK NIFTY** from Yahoo Finance and
    upserts the snapshot into `public.market_indices`.
 2. Fetches the live NSE issue list plus each issue's subscription book, then
-   updates matching rows in `public.ipos` (subscription, dates, status, price
-   band, and GMP when a GMP feed is configured).
+   **inserts** issues that are missing from `public.ipos` and **updates** the
+   rows already there (subscription, dates, status, price band, issue size,
+   GMP). NSE blocks most datacenter IPs, so IPOWatch's public pages are read as
+   a fallback and as a supplement: they cover BSE SME issues and publish the
+   grey-market premium that NSE does not.
 3. Fetches a live NSE/BSE price for every distinct `portfolio.symbol` and
    updates `portfolio.current_price` for all holders of that symbol.
 4. Calls the `analyze-holding` Edge Function for any holding whose price moved
    by at least `AI_TRIGGER_PCT` since the last sync (or that has never been
    analysed), so Gemini can refresh the verdict.
 
-It only updates data. It never creates or deletes users, holdings or IPOs.
+It only writes market data. It creates IPO rows that are missing but never
+deletes anything, and it never touches users or holdings.
 
 ## Before the first run
 
@@ -82,11 +86,15 @@ Expected tail of a healthy run:
 
 ```
 14:15:02 INFO    NIFTY 50 22,866.20 (+0.74%)
-14:15:03 INFO    IPO sync: 4 updated, 3 unmatched.
+14:15:02 WARNING NSE returned 0 usable issues - using the IPOWatch fallback (10 issues).
+14:15:03 INFO    IPOWatch upcoming list: 10 open/upcoming issues (8 SME, 2 mainboard).
+14:15:03 INFO    IPOWatch matched GMP for 10/10 issues and subscription for 5/10.
+14:15:03 INFO    Inserted IPO Maxwell Engineering (SME, Open, closes 2026-11-03).
+14:15:04 INFO    IPO sync via IPOWATCH: 8 inserted, 2 updated, 0 skipped.
 14:15:05 INFO    RELIANCE -> ₹1,173.90 (+1.38%) across 2 holding(s)
 14:15:06 INFO    AI refresh: 3 of 5 moved 1.50% or more; analysing 3.
 14:15:09 INFO    RELIANCE re-analysed: BUY (gemini) after +1.38%
-14:15:10 INFO    Done in 8.4s | indices 3 | IPOs 4 updated / 3 unmatched | portfolio 5 rows, 4 symbols, 0 unquoted | AI 3
+14:15:10 INFO    Done in 8.4s | indices 3 | IPOs 10 written / 0 skipped | portfolio 5 rows, 4 symbols, 0 unquoted | AI 3
 ```
 
 ## Scheduling
@@ -131,18 +139,20 @@ meet a 15-minute cadence.
 
 ## Grey-market premium (GMP)
 
-NSE, BSE and Yahoo do **not** publish IPO grey-market premium. The script
-therefore treats GMP as an optional feed:
+NSE, BSE and Yahoo do **not** publish IPO grey-market premium, so the script
+reads it from IPOWatch's public GMP page by default:
 
-- If `IPO_GMP_API_URL` is unset, existing `ipos.gmp` values are left untouched
-  while subscription, dates, status and price band still refresh every run.
-- If it is set, the URL must return a JSON array (or an object with `data`,
-  `ipos`, `results` or `items`) of objects containing a company/name or symbol
-  plus a `gmp` field. Common aliases (`companyName`, `company_name`, `ipoName`,
-  `gmp`, `gmpValue`, `greyMarketPremium`, `price`, `issuePrice`, ...) are
-  recognised, so most commercial feeds work without changes.
-- GMP is unofficial, unregulated data. Use a licensed provider appropriate for
-  your use and keep a source note in the UI.
+- IPOWatch GMP is applied to the issues on that page, including NSE-sourced
+  rows that NSE itself could not price. `gmp_pct` is always recomputed as
+  `gmp / price_band_high * 100`.
+- `IPO_GMP_API_URL` is still supported and takes priority over the scrape, for
+  teams that pay for a licensed feed. It must return a JSON array (or an object
+  with `data`, `ipos`, `results` or `items`) of objects containing a
+  company/name or symbol plus a `gmp` field. Common aliases (`companyName`,
+  `company_name`, `ipoName`, `gmp`, `gmpValue`, `greyMarketPremium`, `price`,
+  `issuePrice`, ...) are recognised.
+- If both sources are unavailable, the stored `ipos.gmp` is left untouched.
+- GMP is unofficial, unregulated data. Keep a source note in the UI.
 
 To refresh GMP manually, update `ipos.gmp` in SQL and set `gmp_pct` to
 `gmp / price_band_high * 100`.
@@ -169,12 +179,18 @@ the scraper calls it).
 - **NSE India** endpoints (`/api/all-upcoming-issues`, `/api/ipo-detail`) need a
   browser-like UA and a primed cookie; the script warms the session first and
   retries on 401/403. Aggressive schedules or shared CI IPs can still be
-  blocked — the run logs a warning and continues with the other sources.
+  blocked — that now triggers the IPOWatch path instead of an empty run.
+- **IPOWatch** (`ipowatch.in/upcoming-ipo-list`, `.../ipo-grey-market-premium-latest-ipo-gmp`,
+  `.../ipo-subscription-status-today`) is scraped with the standard library's
+  `html.parser`; no extra dependency. Column headers are matched by name, so a
+  cosmetic redesign keeps working. The page lists one rolling calendar with no
+  year, so the scraper assumes the current year and skips windows that have
+  already closed (`ipos` history is never rewritten).
 - Portfolio symbols are whatever was stored from **Add stock** (the first word
   of the name, upper-cased). A wrong symbol simply stays unquoted; fix the row's
   `symbol` in Supabase to the NSE ticker (`RELIANCE`, `TCS`, ...).
-- `market_indices` is written for the next dashboard pass. The index cards
-  currently still render the local snapshot in `src/data/referenceData.ts`.
+- `market_indices` feeds the dashboard's NIFTY 50 / SENSEX / BANK NIFTY cards
+  (React Query, five-minute refresh).
 
 ## Troubleshooting
 
@@ -184,7 +200,9 @@ the scraper calls it).
 | `market_indices write failed` | `20261029190000_market_indices.sql` not applied. |
 | `AI call ... 401` | `analyze-holding` not redeployed with the service-role path. |
 | `AI call ... skipped: GEMINI_API_KEY is not set` | Add the key in Edge Function secrets. |
-| IPO rows never change | The live issue name did not match `ipos.company_name`; the log prints unmatched names. Rename the DB row or add a mapping in `match_ipo_row`. |
+| `ipos` table stays empty | Check the log for `IPOWatch upcoming list: 0` — the site changed its markup, or the run used `--skip-ipos`. Otherwise the row is being inserted; refresh the table. |
+| Most live IPOs missing | NSE's list only covers NSE issues; the IPOWatch supplement fills BSE SME. If `IPOWatch added 0` appears, the site was unreachable from the runner. |
+| Duplicate IPO rows | Rows already in the table are matched by normalised company name. Two genuinely different companies with the same normalised name need a manual `company_name` tweak. |
 | Empty portfolio sync | No rows, or every `symbol` is blank. |
 | 429 from Yahoo | Lower the number of distinct symbols or run less often. |
 
