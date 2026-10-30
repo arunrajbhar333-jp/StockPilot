@@ -374,18 +374,18 @@ Deno.serve(async (req: Request) => {
   const rows = (holdings ?? []) as unknown as HoldingRow[];
 
   // General market context: top 20 stocks from the live/upcoming catalog so the
-  // assistant can answer about names the user does not hold.
-  const { data: catalog, error: catalogError } = await admin
+  // assistant can answer about names the user does not hold.    const { data: catalog, error: catalogError } = await admin
     .from("market_catalog")
     .select("symbol, stock_name, current_price, ai_verdict, ai_reasoning")
     .order("current_price", { ascending: false, nullsFirst: false })
-    .limit(20);
+    .limit(100);
 
   if (catalogError) {
     return json({ error: `Could not read the market catalog: ${catalogError.message}` }, 500);
   }
 
   const catalogRows = (catalog ?? []) as unknown as CatalogRow[];
+  const catalogCount = catalogRows.length;
 
   // Live/upcoming IPOs: the assistant uses this when the member asks about a
   // fresh issue. Column names vary across migrations, so the function picks the
@@ -505,12 +505,10 @@ Deno.serve(async (req: Request) => {
     const detail = error instanceof Error ? error.message : String(error);
     console.error(`[portfolio-chat] transport failure: ${detail}`);
     return json({ error: `The assistant could not be reached: ${detail}` }, 502);
-  }
-
-  return json({
+  }    return json({
     reply,
     holdings: rows.length,
-    catalogCount: catalogRows.length,
+    catalogCount,
     ipoCount: ipoRows.length,
   });
 });

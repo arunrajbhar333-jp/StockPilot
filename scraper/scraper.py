@@ -460,7 +460,7 @@ def fetch_live_ipos(session: requests.Session, config: Config) -> list[LiveIpo]:
         subscription, lot_size = fetch_ipo_detail(session, symbol, config)
         if status == "Upcoming":
             subscription = None
-        time.sleep(0.25)
+        time.sleep(0.10)
 
         issues.append(
             LiveIpo(
