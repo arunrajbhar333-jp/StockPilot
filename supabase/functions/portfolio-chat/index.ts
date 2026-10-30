@@ -92,12 +92,12 @@ interface CatalogRow {
 interface IpoRow {
   id: string | null;
   company_name: string | null;
-  company: string | null;
   type: string | null;
   gmp: number | string | null;
   subscription: number | string | null;
   ai_score: number | string | null;
   verdict: string | null;
+  status: string | null;
 }
 
 interface Turn {
@@ -263,7 +263,6 @@ function ipoLines(rows: IpoRow[]): string[] {
     const score = number(row.ai_score);
     const name =
       row.company_name ||
-      row.company ||
       `ipo-${row.id ?? "unknown"}`;
     const type = row.type || "IPO";
 
@@ -393,7 +392,7 @@ Deno.serve(async (req: Request) => {
   // available Knockout columns by name.
   const { data: ipos, error: iposError } = await admin
     .from("ipos")
-    .select("id, company_name, company, type, gmp, subscription, ai_score, verdict")
+    .select("id, company_name, type, gmp, subscription, ai_score, verdict, status")
     .order("ai_score", { ascending: false, nullsFirst: false })
     .limit(20);
 
