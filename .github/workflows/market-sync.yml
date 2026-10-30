@@ -43,4 +43,4 @@ jobs:
           IPO_GMP_API_KEY: ${{ secrets.IPO_GMP_API_KEY }}
           AI_TRIGGER_PCT: "1.5"
           AI_MAX_ANALYSES: "20"
-        run: python scraper/scraper.py
+        run: python scraper/scraper.py --rescore-ipos
