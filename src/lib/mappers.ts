@@ -1,12 +1,14 @@
 import {
   MODULE_KEYS,
   type Holding,
+  type HoldingAction,
   type HoldingVerdict,
   type Ipo,
   type IpoStatus,
   type IpoVerdict,
   type MarketIndex,
   type ModuleKey,
+  type PillarInsight,
   type SipFund,
   type SipRisk,
   type SipVerdict,
@@ -59,6 +61,10 @@ export interface PortfolioRow {
   ai_reasoning: string | null;
   ai_source: string | null;
   confidence: number | string | null;
+  ai_action: string | null;
+  ai_urgent: boolean | null;
+  ai_timeline: string | null;
+  ai_breakdown: unknown;
   purchase_date: string | null;
   last_analyzed_at: string | null;
   created_at: string | null;
@@ -223,7 +229,47 @@ export function parseHoldingVerdict(value: string | null): HoldingVerdict {
   );
 }
 
+export function actionFromVerdict(verdict: HoldingVerdict): HoldingAction {
+  if (verdict === "STRONG BUY" || verdict === "BUY") return "BUY";
+  if (verdict === "SELL" || verdict === "STRONG SELL") return "SELL";
+  return "HOLD";
+}
+
+function parseAction(
+  value: string | null,
+  verdict: HoldingVerdict,
+): HoldingAction {
+  const normalized = (value ?? "").trim().toUpperCase();
+  if (normalized === "BUY" || normalized === "HOLD" || normalized === "SELL") {
+    return normalized;
+  }
+  // A row written before the deep-analysis columns existed still gets a usable
+  // action, derived from the rating it already carries.
+  return actionFromVerdict(verdict);
+}
+
+/** [{label, value}, …] as stored by analyze-holding; anything else -> []. */
+function parseBreakdown(value: unknown): PillarInsight[] {
+  if (!Array.isArray(value)) return [];
+
+  const pillars: PillarInsight[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const label = (entry as { label?: unknown }).label;
+    const text = (entry as { value?: unknown }).value;
+    if (typeof label !== "string" || typeof text !== "string") continue;
+    const cleanLabel = label.trim().slice(0, 60);
+    const cleanValue = text.trim().replace(/\s+/g, " ").slice(0, 320);
+    if (!cleanLabel || !cleanValue) continue;
+    pillars.push({ label: cleanLabel, value: cleanValue });
+    if (pillars.length === 8) break;
+  }
+  return pillars;
+}
+
 export function mapPortfolioRow(row: PortfolioRow): Holding {
+  const aiVerdict = parseHoldingVerdict(row.ai_verdict);
+
   return {
     id: row.id,
     stock: row.stock_name,
@@ -232,13 +278,17 @@ export function mapPortfolioRow(row: PortfolioRow): Holding {
     quantity: toNumber(row.quantity),
     avgPrice: toNumber(row.buy_price),
     ltp: toNumber(row.current_price),
-    aiVerdict: parseHoldingVerdict(row.ai_verdict),
+    aiVerdict,
     aiSource:
       row.ai_source === "gemini" || row.ai_source === "placeholder"
         ? row.ai_source
         : "unknown",
     confidence: toNumber(row.confidence),
     reason: row.ai_reasoning ?? "",
+    action: parseAction(row.ai_action, aiVerdict),
+    urgent: row.ai_urgent === true,
+    timeline: (row.ai_timeline ?? "").trim(),
+    breakdown: parseBreakdown(row.ai_breakdown),
     purchaseDate: row.purchase_date,
     lastAnalyzedAt: row.last_analyzed_at,
   };

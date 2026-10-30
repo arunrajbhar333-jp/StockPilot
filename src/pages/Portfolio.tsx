@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
+  ChevronDown,
+  ChevronUp,
   Plus,
   Sparkles,
   Trash2,
@@ -111,24 +113,147 @@ function DeleteHoldingButton({
       title={`Delete ${stock}`}
       className="size-7 shrink-0 rounded-md text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:bg-negative/15 hover:text-negative"
     >
-      <Trash2
-        className="size-3.5 shrink-0 text-red-500"
-        strokeWidth={1.5}
-      />
+      <Trash2 className="size-3.5 shrink-0 text-red-500" strokeWidth={1.5} />
     </Button>
+  );
+}
+
+/**
+ * Portfolio-wide status line. Red the moment anything is a SELL or flagged
+ * urgent, green only when every position is HOLD or better.
+ */
+function AlertBanner({ positions }: { positions: Position[] }) {
+  if (positions.length === 0) return null;
+
+  const flagged = positions.find(
+    (position) => isSellVerdict(position.aiVerdict) || position.urgent,
+  );
+
+  if (flagged) {
+    const reason =
+      flagged.reason.trim() ||
+      "AI analysis ke hisaab se position abhi weak hai — exit consider karo.";
+    return (
+      <div
+        role="alert"
+        className="rounded-xl border border-negative/45 bg-negative/[0.10] px-4 py-3"
+      >
+        <p className="text-[12px] leading-relaxed font-semibold text-negative">
+          ⚠️ ALERT: Sell {flagged.stock} today!
+        </p>
+        <p className="mt-1 text-[11px] leading-relaxed text-foreground">
+          Reason: {reason}
+        </p>
+      </div>
+    );
+  }
+
+  const timeline =
+    positions.find(
+      (position) => position.action === "HOLD" && position.timeline,
+    )?.timeline ??
+    positions.find((position) => position.timeline)?.timeline ??
+    "3-6 Months";
+
+  return (
+    <div
+      role="status"
+      className="rounded-xl border border-signal/45 bg-signal/[0.08] px-4 py-3"
+    >
+      <p className="text-[12px] leading-relaxed font-semibold text-signal">
+        ✅ All clear. Hold your positions.
+      </p>
+      <p className="mt-1 text-[11px] leading-relaxed text-foreground">
+        Timeline: {timeline}
+      </p>
+    </div>
+  );
+}
+
+function ExpandButton({
+  expanded,
+  onClick,
+}: {
+  expanded: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={onClick}
+      aria-expanded={expanded}
+      className="group h-6 gap-1 rounded-md px-1.5 text-[10px] font-medium text-muted-foreground transition-all duration-200 hover:text-foreground"
+    >
+      {expanded ? (
+        <ChevronUp
+          className="size-3 shrink-0 transition-transform duration-200 group-hover:-translate-y-0.5"
+          strokeWidth={1.5}
+        />
+      ) : (
+        <ChevronDown
+          className="size-3 shrink-0 transition-transform duration-200 group-hover:-translate-y-0.5"
+          strokeWidth={1.5}
+        />
+      )}
+      {expanded ? "Close" : "Expand"}
+    </Button>
+  );
+}
+
+/** The six pillars as a clean grid: fundamentals, India macro, crude, global,
+ *  news and the final verdict, in the order the analyst produced them. */
+function BreakdownGrid({ position }: { position: Position }) {
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="eyebrow text-[9px] text-muted-foreground/70">
+          Deep analysis · {position.stock}
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-baseline gap-1 text-[10px] text-foreground">
+            <span className="font-semibold">{position.aiVerdict}</span>
+            {position.timeline ? (
+              <span className="text-muted-foreground">
+                ({position.timeline})
+              </span>
+            ) : null}
+          </span>
+          <span className="num text-[10px] text-muted-foreground">
+            {position.confidence}% confidence
+          </span>
+        </div>
+      </div>
+      <div className="mt-2.5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {position.breakdown.map((pillar) => (
+          <div
+            key={pillar.label}
+            className="rounded-lg border border-white/[0.07] bg-black/25 p-2.5"
+          >
+            <p className="text-[9px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
+              {pillar.label}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-foreground">
+              {pillar.value}
+            </p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[10px] text-muted-foreground/70">
+        {position.reason}
+      </p>
+    </div>
   );
 }
 
 export default function Portfolio() {
   const { user } = useSession();
-  const {
-    holdings,
-    isLoading,
-    error,
-    refetch,
-  } = usePortfolio(user?.id ?? null);
+  const { holdings, isLoading, error, refetch } = usePortfolio(
+    user?.id ?? null,
+  );
   const [addOpen, setAddOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Position | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const deleteHolding = useDeleteHolding();
   const positions = useMemo(() => buildPositions(holdings), [holdings]);
 
@@ -172,7 +297,10 @@ export default function Portfolio() {
         actions={
           <>
             <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] text-muted-foreground">
-              <Sparkles className="size-3 shrink-0 text-amber-500" strokeWidth={1.5} />
+              <Sparkles
+                className="size-3 shrink-0 text-amber-500"
+                strokeWidth={1.5}
+              />
               AI review · latest close
             </span>
             <Button
@@ -187,6 +315,8 @@ export default function Portfolio() {
         }
       />
 
+      <AlertBanner positions={positions} />
+
       {placeholderCount > 0 ? (
         <div
           role="status"
@@ -198,7 +328,8 @@ export default function Portfolio() {
             {placeholderCount} of {positions.length} verdict
             {placeholderCount === 1 ? " was" : "s were"} generated without
             Gemini, so {placeholderCount === 1 ? "it is" : "they are"} not{" "}
-            {placeholderCount === 1 ? "a real AI call" : "real AI calls"}. Connect{" "}
+            {placeholderCount === 1 ? "a real AI call" : "real AI calls"}.
+            Connect{" "}
             <span className="font-mono text-[10px]">GEMINI_API_KEY</span> to the{" "}
             <span className="font-mono text-[10px]">analyze-holding</span>{" "}
             function to get live verdicts.
@@ -239,8 +370,7 @@ export default function Portfolio() {
               totals.pnl >= 0 ? "text-signal" : "text-negative",
             )}
           >
-            {totals.pnl >= 0 ? "+" : "−"}₹
-            {money.format(Math.abs(totals.pnl))}
+            {totals.pnl >= 0 ? "+" : "−"}₹{money.format(Math.abs(totals.pnl))}
           </p>
           <p className="mt-1 text-[10px] text-muted-foreground">
             <span
@@ -292,57 +422,57 @@ export default function Portfolio() {
       </section>
 
       {best ? (
-      <section className="glass relative overflow-hidden rounded-2xl p-4 sm:p-5">
-        <div className="pointer-events-none absolute -top-20 -right-10 size-48 rounded-full bg-ai/[0.07] blur-3xl" />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-ai/25 bg-ai/10">
-              <Sparkles
-                className="size-3.5 shrink-0 text-amber-500"
-                strokeWidth={1.5}
-              />
-            </span>
-            <div>
-              <p className="text-[11px] font-medium text-foreground">
-                AI portfolio review
-              </p>
-              <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
-                {positions.length} position{positions.length === 1 ? "" : "s"}{" "}
-                reviewed: {totals.verdicts.BUY} rated buy, {totals.verdicts.HOLD}{" "}
-                hold and {totals.verdicts.SELL} sell. {best.stock} leads the book
-                at{" "}
-                <span
-                  className={cn(
-                    "num",
-                    best.pnlPct >= 0 ? "text-signal" : "text-negative",
-                  )}
-                >
-                  {best.pnlPct >= 0 ? "+" : "−"}
-                  {Math.abs(best.pnlPct).toFixed(1)}%
-                </span>
-                . Verdicts weigh price action, fundamentals and sector momentum;
-                treat them as research input, not advice.
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-4 rounded-xl border border-white/[0.06] bg-black/25 px-3.5 py-2.5 sm:ml-auto">
-            {(
-              [
-                ["BUY", totals.verdicts.BUY, "text-signal"],
-                ["HOLD", totals.verdicts.HOLD, "text-gold"],
-                ["SELL", totals.verdicts.SELL, "text-negative"],
-              ] as const
-            ).map(([label, count, tone]) => (
-              <div key={label} className="text-center">
-                <p className={cn("num text-sm font-medium", tone)}>{count}</p>
-                <p className="text-[9px] tracking-wide text-muted-foreground">
-                  {label}
+        <section className="glass relative overflow-hidden rounded-2xl p-4 sm:p-5">
+          <div className="pointer-events-none absolute -top-20 -right-10 size-48 rounded-full bg-ai/[0.07] blur-3xl" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-ai/25 bg-ai/10">
+                <Sparkles
+                  className="size-3.5 shrink-0 text-amber-500"
+                  strokeWidth={1.5}
+                />
+              </span>
+              <div>
+                <p className="text-[11px] font-medium text-foreground">
+                  AI portfolio review
+                </p>
+                <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
+                  {positions.length} position{positions.length === 1 ? "" : "s"}{" "}
+                  reviewed: {totals.verdicts.BUY} rated buy,{" "}
+                  {totals.verdicts.HOLD} hold and {totals.verdicts.SELL} sell.{" "}
+                  {best.stock} leads the book at{" "}
+                  <span
+                    className={cn(
+                      "num",
+                      best.pnlPct >= 0 ? "text-signal" : "text-negative",
+                    )}
+                  >
+                    {best.pnlPct >= 0 ? "+" : "−"}
+                    {Math.abs(best.pnlPct).toFixed(1)}%
+                  </span>
+                  . Verdicts weigh price action, fundamentals and sector
+                  momentum; treat them as research input, not advice.
                 </p>
               </div>
-            ))}
+            </div>
+            <div className="flex shrink-0 items-center gap-4 rounded-xl border border-white/[0.06] bg-black/25 px-3.5 py-2.5 sm:ml-auto">
+              {(
+                [
+                  ["BUY", totals.verdicts.BUY, "text-signal"],
+                  ["HOLD", totals.verdicts.HOLD, "text-gold"],
+                  ["SELL", totals.verdicts.SELL, "text-negative"],
+                ] as const
+              ).map(([label, count, tone]) => (
+                <div key={label} className="text-center">
+                  <p className={cn("num text-sm font-medium", tone)}>{count}</p>
+                  <p className="text-[9px] tracking-wide text-muted-foreground">
+                    {label}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
       ) : null}
 
       <section className="glass overflow-hidden rounded-2xl">
@@ -375,178 +505,259 @@ export default function Portfolio() {
           </div>
         ) : positions.length === 0 ? (
           <p className="px-4 py-10 text-center text-[11px] leading-relaxed text-muted-foreground sm:px-5">
-            No holdings yet. Use <span className="text-foreground">Add stock</span>{" "}
-            to record your first position and get an AI verdict.
+            No holdings yet. Use{" "}
+            <span className="text-foreground">Add stock</span> to record your
+            first position and get an AI verdict.
           </p>
         ) : (
           <>
-        <div className="hidden md:block">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-white/[0.06] hover:bg-transparent">
-                {["Stock", "Qty", "Avg cost", "LTP", "P&L", "AI verdict"].map(
-                  (heading) => (
-                    <TableHead
-                      key={heading}
-                      className={cn(
-                        "text-[9px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase",
-                        heading === "Qty" && "text-right",
-                        heading === "Avg cost" && "text-right",
-                        heading === "LTP" && "text-right",
-                        heading === "P&L" && "text-right",
-                      )}
-                    >
-                      {heading}
-                    </TableHead>
-                  ),
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {positions.map((position) => (
-                <TableRow
-                  key={position.id}
-                  className={cn(
-                    "border-white/[0.05] hover:bg-white/[0.03]",
-                    isSellVerdict(position.aiVerdict) &&
-                      "bg-negative/[0.05] hover:bg-negative/[0.08]",
-                  )}
-                >
-                  <TableCell className="py-3.5">
-                    <div className="flex items-center gap-2.5">
-                      <span className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[10px] font-semibold text-muted-foreground">
-                        {initials(position.stock)}
-                      </span>
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-white/[0.06] hover:bg-transparent">
+                    {[
+                      "Stock",
+                      "Qty",
+                      "Avg cost",
+                      "LTP",
+                      "P&L",
+                      "AI verdict",
+                    ].map((heading) => (
+                      <TableHead
+                        key={heading}
+                        className={cn(
+                          "text-[9px] font-semibold tracking-[0.14em] text-muted-foreground/70 uppercase",
+                          heading === "Qty" && "text-right",
+                          heading === "Avg cost" && "text-right",
+                          heading === "LTP" && "text-right",
+                          heading === "P&L" && "text-right",
+                        )}
+                      >
+                        {heading}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {positions.map((position) => (
+                    <Fragment key={position.id}>
+                      <TableRow
+                        className={cn(
+                          "border-white/[0.05] hover:bg-white/[0.03]",
+                          isSellVerdict(position.aiVerdict) &&
+                            "bg-negative/[0.05] hover:bg-negative/[0.08]",
+                        )}
+                      >
+                        <TableCell className="py-3.5">
+                          <div className="flex items-center gap-2.5">
+                            <span className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[10px] font-semibold text-muted-foreground">
+                              {initials(position.stock)}
+                            </span>
+                            <div>
+                              <p className="text-[12px] font-medium text-foreground">
+                                {position.stock}
+                              </p>
+                              <p className="num text-[10px] text-muted-foreground">
+                                {position.symbol} · {position.sector}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="num text-right text-[12px] text-muted-foreground">
+                          {position.quantity}
+                        </TableCell>
+                        <TableCell className="num text-right text-[12px] text-muted-foreground">
+                          ₹{position.avgPrice.toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell className="num text-right text-[12px] text-foreground">
+                          ₹{position.ltp.toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <PnlText
+                            pnl={position.pnl}
+                            pnlPct={position.pnlPct}
+                          />
+                        </TableCell>
+                        <TableCell className="max-w-[360px] pr-5">
+                          <div className="flex flex-wrap items-start gap-2">
+                            <span className="inline-flex items-baseline gap-1">
+                              <VerdictBadge verdict={position.aiVerdict} />
+                              {position.timeline ? (
+                                <span className="text-[10px] text-muted-foreground">
+                                  ({position.timeline})
+                                </span>
+                              ) : null}
+                            </span>
+                            {position.breakdown.length > 0 ? (
+                              <ExpandButton
+                                expanded={expandedId === position.id}
+                                onClick={() =>
+                                  setExpandedId(
+                                    expandedId === position.id
+                                      ? null
+                                      : position.id,
+                                  )
+                                }
+                              />
+                            ) : null}
+                            <DeleteHoldingButton
+                              stock={position.stock}
+                              onClick={() => setPendingDelete(position)}
+                            />
+                            {position.aiSource === "placeholder" ? (
+                              <span className="inline-flex items-center gap-1 rounded border border-gold/30 bg-gold/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-gold uppercase">
+                                <TriangleAlert className="size-2.5" />
+                                Placeholder
+                              </span>
+                            ) : null}
+                            <p className="text-[10px] leading-relaxed text-muted-foreground">
+                              {position.reason}
+                            </p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {expandedId === position.id ? (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell
+                            colSpan={6}
+                            className="bg-black/20 px-4 py-4 sm:px-5"
+                          >
+                            <BreakdownGrid position={position} />
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Mobile-first position cards */}
+            <div className="divide-y divide-white/[0.05] md:hidden">
+              {positions.map((position) => {
+                const positive = position.pnl >= 0;
+                return (
+                  <div
+                    key={position.id}
+                    className={cn(
+                      "p-4",
+                      isSellVerdict(position.aiVerdict) && "bg-negative/[0.05]",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[10px] font-semibold text-muted-foreground">
+                          {initials(position.stock)}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-medium">
+                            {position.stock}
+                          </p>
+                          <p className="num text-[10px] text-muted-foreground">
+                            {position.quantity} sh · avg ₹
+                            {position.avgPrice.toLocaleString("en-IN")}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="inline-flex items-baseline gap-1">
+                          <VerdictBadge verdict={position.aiVerdict} />
+                          {position.timeline ? (
+                            <span className="text-[9px] text-muted-foreground">
+                              ({position.timeline})
+                            </span>
+                          ) : null}
+                        </span>
+                        <DeleteHoldingButton
+                          stock={position.stock}
+                          onClick={() => setPendingDelete(position)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-end justify-between gap-3">
                       <div>
-                        <p className="text-[12px] font-medium text-foreground">
-                          {position.stock}
+                        <p className="text-[9px] tracking-wide text-muted-foreground uppercase">
+                          Current value
                         </p>
-                        <p className="num text-[10px] text-muted-foreground">
-                          {position.symbol} · {position.sector}
+                        <p className="num mt-0.5 text-[13px] text-foreground">
+                          ₹{money.format(position.current)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p
+                          className={cn(
+                            "num flex items-center justify-end gap-0.5 text-[12px] font-medium",
+                            positive ? "text-signal" : "text-negative",
+                          )}
+                        >
+                          {positive ? (
+                            <ArrowUpRight className="size-3" />
+                          ) : (
+                            <ArrowDownRight className="size-3" />
+                          )}
+                          ₹{money.format(Math.abs(position.pnl))}
+                        </p>
+                        <p
+                          className={cn(
+                            "num text-[10px]",
+                            positive ? "text-signal/70" : "text-negative/70",
+                          )}
+                        >
+                          {positive ? "+" : "−"}
+                          {Math.abs(position.pnlPct).toFixed(2)}%
                         </p>
                       </div>
                     </div>
-                  </TableCell>
-                  <TableCell className="num text-right text-[12px] text-muted-foreground">
-                    {position.quantity}
-                  </TableCell>
-                  <TableCell className="num text-right text-[12px] text-muted-foreground">
-                    ₹{position.avgPrice.toLocaleString("en-IN")}
-                  </TableCell>
-                  <TableCell className="num text-right text-[12px] text-foreground">
-                    ₹{position.ltp.toLocaleString("en-IN")}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <PnlText pnl={position.pnl} pnlPct={position.pnlPct} />
-                  </TableCell>
-                  <TableCell className="max-w-[320px] pr-5">
-                    <div className="flex flex-wrap items-start gap-2">
-                      <VerdictBadge verdict={position.aiVerdict} />
-                      <DeleteHoldingButton
-                        stock={position.stock}
-                        onClick={() => setPendingDelete(position)}
-                      />
+
+                    <p className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
                       {position.aiSource === "placeholder" ? (
-                        <span className="inline-flex items-center gap-1 rounded border border-gold/30 bg-gold/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-gold uppercase">
+                        <span className="mb-1 flex items-center gap-1 text-[9px] font-semibold tracking-wide text-gold uppercase">
                           <TriangleAlert className="size-2.5" />
-                          Placeholder
+                          Placeholder AI call
                         </span>
                       ) : null}
-                      <p className="text-[10px] leading-relaxed text-muted-foreground">
-                        {position.reason}
-                      </p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                      {position.reason}
+                    </p>
 
-        {/* Mobile-first position cards */}
-        <div className="divide-y divide-white/[0.05] md:hidden">
-          {positions.map((position) => {
-            const positive = position.pnl >= 0;
-            return (
-              <div
-                key={position.id}
-                className={cn(
-                  "p-4",
-                  isSellVerdict(position.aiVerdict) && "bg-negative/[0.05]",
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[10px] font-semibold text-muted-foreground">
-                      {initials(position.stock)}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px] font-medium">
-                        {position.stock}
-                      </p>
-                      <p className="num text-[10px] text-muted-foreground">
-                        {position.quantity} sh · avg ₹
-                        {position.avgPrice.toLocaleString("en-IN")}
-                      </p>
-                    </div>
+                    {position.breakdown.length > 0 ? (
+                      <>
+                        <button
+                          type="button"
+                          aria-expanded={expandedId === position.id}
+                          onClick={() =>
+                            setExpandedId(
+                              expandedId === position.id ? null : position.id,
+                            )
+                          }
+                          className="group mt-2.5 inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-medium text-muted-foreground transition-all duration-200 hover:text-foreground"
+                        >
+                          {expandedId === position.id ? (
+                            <ChevronUp
+                              className="size-3 shrink-0 transition-transform duration-200 group-hover:-translate-y-0.5"
+                              strokeWidth={1.5}
+                            />
+                          ) : (
+                            <ChevronDown
+                              className="size-3 shrink-0 transition-transform duration-200 group-hover:-translate-y-0.5"
+                              strokeWidth={1.5}
+                            />
+                          )}
+                          {expandedId === position.id
+                            ? "Close analysis"
+                            : "Expand analysis"}
+                        </button>
+                        {expandedId === position.id ? (
+                          <div className="mt-3">
+                            <BreakdownGrid position={position} />
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
                   </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <VerdictBadge verdict={position.aiVerdict} />
-                    <DeleteHoldingButton
-                      stock={position.stock}
-                      onClick={() => setPendingDelete(position)}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-3 flex items-end justify-between gap-3">
-                  <div>
-                    <p className="text-[9px] tracking-wide text-muted-foreground uppercase">
-                      Current value
-                    </p>
-                    <p className="num mt-0.5 text-[13px] text-foreground">
-                      ₹{money.format(position.current)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p
-                      className={cn(
-                        "num flex items-center justify-end gap-0.5 text-[12px] font-medium",
-                        positive ? "text-signal" : "text-negative",
-                      )}
-                    >
-                      {positive ? (
-                        <ArrowUpRight className="size-3" />
-                      ) : (
-                        <ArrowDownRight className="size-3" />
-                      )}
-                      ₹{money.format(Math.abs(position.pnl))}
-                    </p>
-                    <p
-                      className={cn(
-                        "num text-[10px]",
-                        positive ? "text-signal/70" : "text-negative/70",
-                      )}
-                    >
-                      {positive ? "+" : "−"}
-                      {Math.abs(position.pnlPct).toFixed(2)}%
-                    </p>
-                  </div>
-                </div>
-
-                <p className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
-                  {position.aiSource === "placeholder" ? (
-                    <span className="mb-1 flex items-center gap-1 text-[9px] font-semibold tracking-wide text-gold uppercase">
-                      <TriangleAlert className="size-2.5" />
-                      Placeholder AI call
-                    </span>
-                  ) : null}
-                  {position.reason}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
           </>
         )}
 

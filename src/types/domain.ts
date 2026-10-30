@@ -63,6 +63,15 @@ export interface Ipo {
   thesis: string;
 }
 
+/** The plain instruction behind a verdict: what the member should do. */
+export type HoldingAction = "BUY" | "HOLD" | "SELL";
+
+/** One row of the six-pillar deep analysis. */
+export interface PillarInsight {
+  label: string;
+  value: string;
+}
+
 export interface Holding {
   id: string;
   stock: string;
@@ -75,6 +84,13 @@ export interface Holding {
   aiSource: AiSource;
   confidence: number;
   reason: string;
+  action: HoldingAction;
+  /** True when the analysis says act today — drives the red banner. */
+  urgent: boolean;
+  /** Review horizon from the analysis, e.g. "3-6 Months". */
+  timeline: string;
+  /** Six-pillar breakdown; empty until a live analysis has produced one. */
+  breakdown: PillarInsight[];
   /** ISO date (YYYY-MM-DD) the position was bought, when recorded. */
   purchaseDate: string | null;
   /** ISO timestamp of the last AI analysis, null until one has run. */

@@ -4,7 +4,7 @@ import {
   SUPABASE_SETUP_MESSAGE,
   supabase,
 } from "@/lib/supabase";
-import { parseHoldingVerdict } from "@/lib/mappers";
+import { actionFromVerdict, parseHoldingVerdict } from "@/lib/mappers";
 import { readFunctionError } from "@/lib/function-error";
 import type { HoldingVerdict } from "@/types/domain";
 
@@ -137,6 +137,12 @@ async function runAnalysis(
       ai_source: "placeholder",
       last_analyzed_at: new Date().toISOString(),
       confidence: 60,
+      // Keep the structured half in step with the placeholder verdict: a
+      // stand-in call carries no pillars and is never urgent.
+      ai_action: actionFromVerdict(fallback.verdict),
+      ai_urgent: false,
+      ai_timeline: fallback.verdict === "HOLD" ? "3-6 Months" : null,
+      ai_breakdown: [],
     })
     .eq("id", holdingId)
     .eq("user_id", userId);
@@ -190,6 +196,49 @@ export function useAddHolding() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: PORTFOLIO_KEY });
+    },
+  });
+}
+
+/** One turn of the in-app assistant, kept client-side only. */
+export interface ChatTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/**
+ * Asks the portfolio-chat Edge Function, which answers in Hinglish using the
+ * caller's holdings and their stored six-pillar analysis.
+ */
+export function usePortfolioChat() {
+  return useMutation({
+    mutationFn: async (input: {
+      message: string;
+      history?: ChatTurn[];
+    }): Promise<string> => {
+      if (!isSupabaseConfigured || !supabase) {
+        throw new Error(SUPABASE_SETUP_MESSAGE);
+      }
+
+      const { data, error } = await supabase.functions.invoke(
+        "portfolio-chat",
+        { body: { message: input.message, history: input.history ?? [] } },
+      );
+
+      if (error) {
+        throw new Error(await readFunctionError(error, "portfolio-chat"));
+      }
+
+      const payload = (data ?? {}) as { reply?: unknown; error?: unknown };
+      if (typeof payload.reply === "string" && payload.reply.trim()) {
+        return payload.reply.trim();
+      }
+
+      throw new Error(
+        typeof payload.error === "string" && payload.error
+          ? payload.error
+          : "The assistant returned no reply. Please try again.",
+      );
     },
   });
 }

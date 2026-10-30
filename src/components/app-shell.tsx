@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
+import { AiChatWidget } from "@/components/ai-chat-widget";
 import { BrandLockup, BrandMark } from "@/components/brand";
 import {
   DropdownMenu,
@@ -543,6 +544,8 @@ export function AppShell() {
           <p className="num">Scraper: idle · Gemini: active · v0.2.0</p>
         </footer>
       </div>
+
+      <AiChatWidget />
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent
