@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Send, Sparkles, X } from "lucide-react";
+import { Loader2, MessageCircle, Send, X } from "lucide-react";
 import { usePortfolioChat, type ChatTurn } from "@/hooks/use-portfolio-actions";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -52,23 +52,28 @@ export function AiChatWidget() {
 
   if (!isOpen) {
     return (
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        aria-label="Ask AI"
-        className="fixed bottom-6 right-6 z-50 p-4 rounded-full bg-primary text-primary-foreground shadow-xl transition-all duration-200 hover:scale-105 sm:bottom-8 sm:right-8"
-      >
-        <Sparkles className="size-6 shrink-0" strokeWidth={1.5} />
-      </button>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          aria-label="Ask AI"
+          className="fixed bottom-6 right-6 z-50 w-12 h-12 flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-white/20 hover:scale-110 transition-all duration-300 sm:bottom-8 sm:right-8 group"
+        >
+          <MessageCircle className="size-5 shrink-0" strokeWidth={1.5} />
+        </button>            <div className="pointer-events-none absolute left-12 top-0 z-50 -translate-x-1/2 -translate-y-full transform whitespace-nowrap rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground opacity-0 transition-opacity duration-200 sm:left-14 sm:top-0 group-hover:opacity-100">
+          Ask AI
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 h-2 w-2 rotate-45 bg-primary" />
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex w-96 max-h-[500px] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl sm:bottom-8 sm:right-8">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 rounded-t-xl">
         <span className="grid size-7 shrink-0 place-items-center rounded-lg border border-primary/25 bg-primary/10">
-          <Sparkles
-            className="size-3.5 shrink-0 text-amber-500"
+          <MessageCircle
+            className="size-3.5 shrink-0 text-primary"
             strokeWidth={1.5}
           />
         </span>
