@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ArrowUpRight, Loader2, Sparkles } from "lucide-react";
+import { ArrowUpRight, Bot, Loader2, Sparkles } from "lucide-react";
+import { useChatStore } from "@/store/use-chat-store";
 import { toast } from "sonner";
 import { IpoApplyDialog } from "@/components/ipo-apply-dialog";
 import { AiScore, IpoTypeBadge, VerdictBadge } from "@/components/signals";
@@ -88,6 +89,7 @@ export function IpoTable({
 }) {
   const [selected, setSelected] = useState<Ipo | null>(null);
   const { isAdmin } = useSession();
+  const { openChat } = useChatStore();
   const now = useNow();
 
   return (
@@ -237,6 +239,18 @@ export function IpoTable({
                       {isAdmin && ipo.aiScore === 0 ? (
                         <ReanalyzeButton ipo={ipo} />
                       ) : null}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openChat(
+                            `Analyze ${ipo.company} (${ipo.type}). Should I buy/hold/sell this? Give me the final verdict.`,
+                          )
+                        }
+                        className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                        title="Ask AI about this IPO"
+                      >
+                        <Bot className="w-4 h-4" />
+                      </button>
                     </div>
                   </TableCell>
                 </TableRow>

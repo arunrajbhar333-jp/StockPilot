@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, MessageCircle, Send, X } from "lucide-react";
 import { usePortfolioChat, type ChatTurn } from "@/hooks/use-portfolio-actions";
+import { useChatStore } from "@/store/use-chat-store";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +14,7 @@ const SUGGESTIONS = [
 export function AiChatWidget() {
   const { user, canAccess } = useSession();
   const chat = usePortfolioChat();
-  const [isOpen, setIsOpen] = useState(false);
+  const { isOpen, prefilledPrompt, openChat, closeChat, clearPrompt } = useChatStore();
   const [value, setValue] = useState("");
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
@@ -50,12 +51,19 @@ export function AiChatWidget() {
     );
   };
 
+  // When the widget opens with a prefilled prompt, send it immediately once.
+  useEffect(() => {
+    if (!isOpen || !prefilledPrompt) return;
+    send(prefilledPrompt);
+    clearPrompt();
+  }, [isOpen, prefilledPrompt]);
+
   if (!isOpen) {
     return (
       <div className="relative">
         <button
           type="button"
-          onClick={() => setIsOpen(true)}
+          onClick={() => openChat("")}
           aria-label="Ask AI"
           className="fixed bottom-6 right-6 z-50 w-12 h-12 flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-white/20 hover:scale-110 transition-all duration-300 sm:bottom-8 sm:right-8 group"
         >
@@ -80,7 +88,7 @@ export function AiChatWidget() {
         <p className="text-[12px] font-semibold">StockPilot AI</p>
         <button
           type="button"
-          onClick={() => setIsOpen(false)}
+          onClick={closeChat}
           aria-label="Close assistant"
           className="grid size-7 place-items-center rounded-full text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground"
         >

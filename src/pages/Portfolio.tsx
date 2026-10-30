@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Bot,
   ChevronDown,
   ChevronUp,
   Plus,
@@ -9,6 +10,7 @@ import {
   Trash2,
   TriangleAlert,
 } from "lucide-react";
+import { useChatStore } from "@/store/use-chat-store";
 import { toast } from "sonner";
 import { AddStockDialog } from "@/components/add-stock-dialog";
 import { PageHeader } from "@/components/page-header";
@@ -255,6 +257,7 @@ export default function Portfolio() {
   const [pendingDelete, setPendingDelete] = useState<Position | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const deleteHolding = useDeleteHolding();
+  const { openChat } = useChatStore();
   const positions = useMemo(() => buildPositions(holdings), [holdings]);
 
   const totals = useMemo(() => {
@@ -604,6 +607,18 @@ export default function Portfolio() {
                               stock={position.stock}
                               onClick={() => setPendingDelete(position)}
                             />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openChat(
+                                  `Analyze ${position.stock} (${position.symbol}). Should I buy/hold/sell this? Give me the final verdict.`,
+                                )
+                              }
+                              className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                              title="Ask AI about this stock"
+                            >
+                              <Bot className="w-4 h-4" />
+                            </button>
                             {position.aiSource === "placeholder" ? (
                               <span className="inline-flex items-center gap-1 rounded border border-gold/30 bg-gold/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-gold uppercase">
                                 <TriangleAlert className="size-2.5" />
@@ -658,8 +673,7 @@ export default function Portfolio() {
                             {position.avgPrice.toLocaleString("en-IN")}
                           </p>
                         </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
+                      </div>                        <div className="flex shrink-0 items-center gap-1.5">
                         <span className="inline-flex items-baseline gap-1">
                           <VerdictBadge verdict={position.aiVerdict} />
                           {position.timeline ? (
@@ -672,6 +686,18 @@ export default function Portfolio() {
                           stock={position.stock}
                           onClick={() => setPendingDelete(position)}
                         />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openChat(
+                              `Analyze ${position.stock} (${position.symbol}). Should I buy/hold/sell this? Give me the final verdict.`,
+                            )
+                          }
+                          className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                          title="Ask AI about this stock"
+                        >
+                          <Bot className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
 

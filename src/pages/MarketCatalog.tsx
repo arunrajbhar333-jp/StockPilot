@@ -2,10 +2,12 @@ import { useMemo, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Bot,
   Search,
   SearchX,
   X,
 } from "lucide-react";
+import { useChatStore } from "@/store/use-chat-store";
 import { PageHeader } from "@/components/page-header";
 import { Sparkline } from "@/components/sparkline";
 import { AiScore, VerdictBadge } from "@/components/signals";
@@ -67,6 +69,7 @@ function StockIdentity({ stock }: { stock: Stock }) {
 export default function MarketCatalog() {
   const [query, setQuery] = useState("");
   const [sector, setSector] = useState("All sectors");
+  const { openChat } = useChatStore();
 
   const sectors = useMemo(
     () => ["All sectors", ...Array.from(new Set(stocks.map((s) => s.sector)))],
@@ -210,6 +213,18 @@ export default function MarketCatalog() {
                     >
                       <TableCell className="py-3 pl-5">
                         <StockIdentity stock={stock} />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openChat(
+                              `Analyze ${stock.name} (${stock.symbol}). Should I buy/hold/sell this? Give me the final verdict.`,
+                            )
+                          }
+                          className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                          title="Ask AI about this stock"
+                        >
+                          <Bot className="w-4 h-4" />
+                        </button>
                       </TableCell>
                       <TableCell className="num hidden text-[11px] text-muted-foreground xl:table-cell">
                         {stock.marketCap}
@@ -240,11 +255,24 @@ export default function MarketCatalog() {
             </div>
 
             <div className="divide-y divide-white/[0.05] md:hidden">
-              {visible.map((stock) => (
-                <div key={stock.id} className="p-4">
+              {visible.map((stock) => (                    <div key={stock.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <StockIdentity stock={stock} />
-                    <VerdictBadge verdict={stock.verdict} />
+                    <div className="flex items-center gap-1.5">
+                      <VerdictBadge verdict={stock.verdict} />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openChat(
+                            `Analyze ${stock.name} (${stock.symbol}). Should I buy/hold/sell this? Give me the final verdict.`,
+                          )
+                        }
+                        className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                        title="Ask AI about this stock"
+                      >
+                        <Bot className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-3 flex items-end justify-between gap-3">

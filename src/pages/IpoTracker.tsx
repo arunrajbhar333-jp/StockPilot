@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Activity, CalendarClock, Loader2, Sparkles, TrendingUp } from "lucide-react";
+import { Activity, Bot, CalendarClock, Loader2, Sparkles, TrendingUp } from "lucide-react";
+import { useChatStore } from "@/store/use-chat-store";
 import { toast } from "sonner";
 import { IpoTable } from "@/components/ipo-table";
 import { PageHeader } from "@/components/page-header";
