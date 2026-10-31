@@ -1,10 +1,18 @@
 // Supabase Edge Function: portfolio-chat
 //
-// The in-app "Ask AI" assistant. It loads three context sets before asking
-// Gemini to answer one question in clear Hinglish:
-//   1. The caller's portfolio holdings (with stored AI analysis).
-//   2. The general market catalog (top 20 listings).
-//   3. Live/upcoming IPOs.
+// The in-app "Ask AI" assistant. It answers one question in clear Hinglish, and
+// it is deliberately retrieval-first: the Gemini prompt only receives the data
+// that actually answers the question.
+//   * A question about one stock gets that stock's row(s) — portfolio first,
+//     then market_catalog — and NO macro quotes.
+//   * A question about an IPO gets that IPO's row.
+//   * A question about the overall market gets the live macro snapshot.
+//   * Anything else gets the caller's holdings.
+//   * A question about a stock that is in neither portfolio nor catalog gets an
+//     empty context plus an explicit "data not available" instruction.
+// Live Nifty/crude quotes are fetched only for the overall-market case; feeding
+// them into every prompt was what made unrelated answers read like a macro
+// script.
 //
 // Request:
 //   {
@@ -276,6 +284,118 @@ function ipoLines(rows: IpoRow[]): string[] {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Question routing
+// ---------------------------------------------------------------------------
+
+/**
+ * Filler + instrument-neutral vocabulary. Removed before we try to read a stock
+ * name out of the question, so "Should I buy Aarti Industries?" yields the
+ * candidate "Aarti Industries" and a macro question yields nothing at all.
+ */
+const STOP_WORDS = new Set([
+  "a", "about", "advice", "an", "analyse", "analysis", "analyze", "and",
+  "any", "are", "as", "ask", "at", "bank", "be", "been", "bhai", "bro",
+  "budget", "but", "buy", "buying", "can", "chahiye", "could", "cpi",
+  "crude", "current", "dii", "do", "does", "dollar", "economy", "fii",
+  "for", "from", "give", "global", "hai", "hain", "hold", "holding",
+  "how", "i", "if", "in", "index", "indices", "inflation", "invest",
+  "investing", "is", "it", "its", "ka", "kaisa", "kaise", "kare", "karein",
+  "karna", "karu", "karun", "ke", "ki", "ko", "kuch", "kya", "long",
+  "macro", "market", "markets", "me", "mein", "mera", "mere", "mujhe", "my",
+  "nifty", "now", "of", "oil", "on", "opinion", "or", "our", "please",
+  "portfolio", "price", "rakhna", "rakhun", "repo", "rbi", "sahi", "scrip",
+  "sell", "selling", "sensex", "share", "shares", "short", "should", "stock",
+  "stocks", "target", "the", "this", "to", "today", "us", "verdict", "view",
+  "was", "what", "when", "where", "which", "who", "why", "will", "with",
+  "would", "you", "your",
+]);
+
+/** Explicit overall-market questions are the only ones that get macro quotes. */
+const MACRO_QUESTION =
+  /\b(nifty|sensex|bank\s?nifty|crude|brent|wti|oil|usd|dollar|rupee|inr|inflation|cpi|rbi|repo|fed|global|macro|economy|economic|budget|market|markets|index|indices|fii|dii)\b/i;
+
+/** Signals that the member is asking for a call on a named instrument. */
+const STOCK_INTENT =
+  /\b(buy|buying|sell|selling|hold|holding|analyz\w*|analys\w*|target|verdict|invest\w*|entry|exit|kharid\w*|bech\w*|rakh\w*)\b/i;
+
+function key(value: string | null | undefined): string {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function words(value: string): string[] {
+  return value
+    .replace(/[^A-Za-z0-9&\-\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** Consecutive non-filler words, e.g. "Aarti Industries" from a full question. */
+function extractMentionedNames(message: string): string[] {
+  const groups: string[] = [];
+  let current: string[] = [];
+
+  const flush = () => {
+    if (current.length > 0) {
+      const phrase = current.join(" ");
+      if (key(phrase).length >= 3) groups.push(phrase);
+      current = [];
+    }
+  };
+
+  for (const word of words(message)) {
+    if (STOP_WORDS.has(word.toLowerCase())) {
+      flush();
+      continue;
+    }
+    current.push(word);
+    if (current.length === 4) flush();
+  }
+  flush();
+
+  return groups;
+}
+
+/** True when a candidate name reads like a company rather than a stray word. */
+function looksLikeStockQuestion(message: string, candidates: string[]): boolean {
+  if (STOCK_INTENT.test(message)) return true;
+
+  return candidates.some((candidate) => {
+    const parts = candidate.split(" ");
+    const allCapitalised = parts.every((part) => /^[A-Z]/.test(part));
+    const ticker = parts.length === 1 && /^[A-Z0-9&-]{3,15}$/.test(candidate);
+    return ticker || (allCapitalised && parts.some((part) => part.length > 1));
+  });
+}
+
+/** Does the question name this stock? Matches the symbol or the company name. */
+function matchesInstrument(
+  message: string,
+  symbol: string | null,
+  name: string | null,
+): boolean {
+  const messageKey = key(message);
+  if (!messageKey) return false;
+
+  const symbolKey = key(symbol);
+  if (symbolKey.length >= 3 && messageKey.includes(symbolKey)) return true;
+
+  const nameKey = key(name);
+  if (nameKey.length >= 4 && messageKey.includes(nameKey)) return true;
+
+  // "Aarti Industries" typed as "Aarti Inds" or with a suffix: every meaningful
+  // word of the stored name appears somewhere in the question.
+  const nameParts = (name ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((part) => part.length > 3);
+  if (nameParts.length >= 2 && nameParts.every((part) => messageKey.includes(part))) {
+    return true;
+  }
+
+  return false;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -373,8 +493,9 @@ Deno.serve(async (req: Request) => {
 
   const rows = (holdings ?? []) as unknown as HoldingRow[];
 
-  // General market context: top 20 stocks from the live/upcoming catalog so the
-  // assistant can answer about names the user does not hold.    const { data: catalog, error: catalogError } = await admin
+  // Catalog sample used for name matching; rows the sample misses are fetched
+  // individually below when the question names them.
+  const { data: catalog, error: catalogError } = await admin
     .from("market_catalog")
     .select("symbol, stock_name, current_price, ai_verdict, ai_reasoning")
     .order("current_price", { ascending: false, nullsFirst: false })
@@ -427,27 +548,103 @@ Deno.serve(async (req: Request) => {
       parts: [{ text: String(turn.text).slice(0, 400) }],
     }));
 
-  const snapshot = await marketSnapshot();
+  // ---- Retrieval ---------------------------------------------------------
+  // Only the data that answers this question reaches the prompt. Macro quotes
+  // are fetched last and only for an explicit overall-market question, so a
+  // single-stock question can never be answered with index or crude figures.
+  const heldMatches = rows.filter((row) =>
+    matchesInstrument(message, row.symbol, row.stock_name),
+  );
+  const catalogMatches = catalogRows.filter(
+    (row) =>
+      matchesInstrument(message, row.symbol, row.stock_name) &&
+      !heldMatches.some(
+        (held) =>
+          held.symbol && row.symbol && key(held.symbol) === key(row.symbol),
+      ),
+  );
+  const ipoMatches = ipoRows.filter((row) =>
+    matchesInstrument(message, null, row.company_name),
+  );
+  const mentioned = extractMentionedNames(message);
+
+  // The catalog list above is a capped sample. If the question names something
+  // it did not include, look that exact name up before calling it missing, so a
+  // stock that exists deeper in market_catalog is not reported as untracked.
+  let lookedUp: CatalogRow[] = [];
+  if (
+    heldMatches.length === 0 &&
+    catalogMatches.length === 0 &&
+    mentioned.length > 0
+  ) {
+    const needle = mentioned[0].replace(/[%,()*]/g, "").trim();
+    if (needle.length >= 3) {
+      const { data: found } = await admin
+        .from("market_catalog")
+        .select("symbol, stock_name, current_price, ai_verdict, ai_reasoning")
+        .or(`stock_name.ilike.%${needle}%,symbol.ilike.%${needle}%`)
+        .limit(5);
+
+      lookedUp = ((found ?? []) as unknown as CatalogRow[]).filter((row) =>
+        matchesInstrument(message, row.symbol, row.stock_name),
+      );
+    }
+  }
+
+  let mode: "ipo" | "instrument" | "macro" | "portfolio" | "unknown";
+  let context = "";
+  let missing = "";
+
+  if (ipoMatches.length > 0) {
+    mode = "ipo";
+    context = ipoMatches.map((row) => ipoLines([row])[0]).join("\n\n");
+  } else if (
+    heldMatches.length > 0 ||
+    catalogMatches.length > 0 ||
+    lookedUp.length > 0
+  ) {
+    mode = "instrument";
+    context = [
+      ...heldMatches.map((row) => portfolioLines([row])[0]),
+      ...catalogMatches.map((row) => catalogLines([row])[0]),
+      ...lookedUp.map((row) => catalogLines([row])[0]),
+    ].join("\n\n");
+  } else if (mentioned.length > 0 && looksLikeStockQuestion(message, mentioned)) {
+    // A named instrument that exists nowhere in our data: empty context.
+    mode = "unknown";
+    missing = mentioned[0].slice(0, 60);
+  } else if (MACRO_QUESTION.test(message)) {
+    mode = "macro";
+    context = await marketSnapshot();
+  } else {
+    mode = "portfolio";
+    context = portfolioLines(rows).join("\n\n");
+  }
+
+  const instruction =
+    mode === "unknown"
+      ? [
+          `The member asked about "${missing}". It is NOT in their portfolio, NOT in the market catalog and NOT in the IPO list. No data for it exists.`,
+          `Start your reply with exactly this sentence, on its own line: "Data for ${missing} is not available in the current market catalog."`,
+          `Then add one short sentence saying that ${missing} is not in our tracked universe, so no verdict can be given on it right now. That is the whole reply.`,
+          "Do not give a verdict, do not estimate a price, and do not mention Nifty 50, Sensex, crude oil, USD/INR or any other market-wide indicator.",
+        ].join("\n")
+      : mode === "instrument"
+        ? "The member asked about one specific stock. Use only its row(s) in CONTEXT. Do not bring in Nifty 50, Sensex, crude oil, USD/INR, inflation or global cues: they were not asked for and are not in the context. Answer the exact question asked, then stop."
+        : mode === "ipo"
+          ? "The member asked about one IPO. Use only its row in CONTEXT. Answer the exact question asked, then stop: no macro commentary."
+          : mode === "macro"
+            ? "The member asked about the overall market. Use only the live quotes in CONTEXT, and say a figure is unavailable rather than guessing it."
+            : "The member asked about their portfolio. Answer from the holdings in CONTEXT only, and say plainly when the holdings do not cover the question.";
+
   const prompt = [
-    `A member has asked: "${message}"`,
+    `The member asked: "${message}"`,
     "",
-    "You are StockPilot AI. You have access to the user's portfolio, the general market catalog, and live IPOs. If the user asks about a stock not in their portfolio, look it up in the market_catalog data. If they ask about an IPO, look it up in the ipos data. Do NOT say you don't have data if it is provided below.",
+    `Answer mode: ${mode}`,
+    instruction,
     "",
-    "Their portfolio (fresh from Supabase):",
-    ...portfolioLines(rows),
-    "",
-    "Market catalog (top 20):",
-    ...catalogLines(catalogRows),
-    "",
-    "Live IPOs:",
-    ...ipoLines(ipoRows),
-    "",
-    "Live market context:",
-    snapshot,
-    "",
-    "Answer in professional, respectful Hinglish (Roman script), 3-6 short sentences, the way a SEBI-registered research analyst would: address the member as \"aap\" (never \"tu\", \"tum\" or \"bhai\") and avoid slang and exclamation marks. Name the stock or IPO they asked about, tie the answer to India's macro or crude or global cues where that actually matters, and state the action (BUY / HOLD / SELL). If a horizon matters, say how long to hold (jaise 3-6 mahine). Keep numbers, tickers and ratios in English. Never invent a price or a news event: if the data is not in the prompt, say clearly that the data available nahi hai. End the body with a one-line reminder that this is research, not investment advice.",
-    "",
-    "Finally, the very last line of your reply must be the verdict in bold markdown, exactly like **FINAL VERDICT: HOLD** — use BUY, HOLD, SELL, STRONG BUY or STRONG SELL, and write nothing after that line.",
+    "CONTEXT — the only data you may use. Anything not listed here does not exist for this answer:",
+    context.trim() || "(empty — no matching data was found)",
   ].join("\n");
 
   let reply = "";
@@ -466,11 +663,17 @@ Deno.serve(async (req: Request) => {
               {
                 text: [
                   "You are StockPilot AI, a senior SEBI-registered equity research analyst advising an Indian retail investor.",
-                  "You know their portfolio and its stored AI verdicts, and you speak fluent, courteous Hinglish in Roman script.",
-                  "Address the member as 'aap'. Never use 'tu', 'tum', 'bhai' or slang, and never open with a joke.",
-                  "You are precise and calm: you state the call plainly, never hedge with maybes, and never claim data you were not given.",
-                  "Format the reply in light markdown only: plain sentences and **bold** for the verdict. No headings, lists, tables or JSON.",
-                  "Always finish with the decision on its own final line, exactly in this form: **FINAL VERDICT: BUY** (or **FINAL VERDICT: HOLD**, **FINAL VERDICT: SELL**, **FINAL VERDICT: STRONG BUY**, **FINAL VERDICT: STRONG SELL**).",
+                  "You speak courteous, professional Hinglish in Roman script and address the member as 'aap'; never use 'tu', 'tum', 'bhai', slang or exclamation marks.",
+                  "STRICT RULES, all mandatory:",
+                  "1. Answer ONLY from the CONTEXT in the user message. You have no other knowledge for this answer. If the CONTEXT is empty or does not cover the question, say plainly that the data is not available.",
+                  "2. NEVER invent or insert market-wide data: no Nifty 50 or Sensex levels, crude oil or Brent prices, USD/INR, inflation, RBI policy, FII/DII flows or global cues. Use them only when the member explicitly asks about the overall market AND the CONTEXT contains the figure.",
+                  "3. If the member asks about a specific stock that is not in the CONTEXT, reply only that the data for that stock is not available in the current market catalog, and that it is not in the tracked universe so you cannot give a verdict. Never give, guess or imply a verdict for a stock you have no data for.",
+                  "4. Never repeat a previous reply or reuse its wording. Each answer must respond to the current question directly; if the member repeats a question, restate the answer more compactly, do not replay the same paragraph.",
+                  "5. Be direct and brief: 2-4 sentences for a stock or IPO question, at most 5 for a portfolio question. No preamble, no recap of the question.",
+                  "6. Quote prices, verdicts, confidence and horizons only as they appear in the CONTEXT. Keep numbers, tickers and ratios in English.",
+                  "7. Only when the CONTEXT carries a stored verdict for the instrument the member asked about, end with the decision on its own final line exactly like **FINAL VERDICT: BUY** (or HOLD, SELL, STRONG BUY, STRONG SELL), and write nothing after it. When you have no data, emit no verdict line at all.",
+                  "8. Light markdown only: plain sentences and **bold** for the verdict line. No headings, bullet lists, tables or JSON.",
+                  "9. Close the body with a one-line reminder that this is research, not investment advice — but only when you actually gave an answer.",
                 ].join(" "),
               },
             ],
@@ -480,7 +683,9 @@ Deno.serve(async (req: Request) => {
             { role: "user", parts: [{ text: prompt }] },
           ],
           generationConfig: {
-            temperature: 0.6,
+            // Low temperature keeps the model on the supplied rows instead of
+            // free-associating macro commentary.
+            temperature: 0.2,
             maxOutputTokens: 400,
           },
         }),
