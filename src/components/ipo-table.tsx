@@ -204,10 +204,7 @@ export function IpoTable({
                       <AiScore score={ipo.aiScore} />
                       <VerdictBadge
                         verdict={ipo.verdict}
-                        className={cn(
-                          "w-fit px-1.5 py-0.5 text-[9px]",
-                          ipo.verdict === "AVOID" && "opacity-80",
-                        )}
+                        className="w-fit px-1.5 py-0.5 text-[9px]"
                       />
                     </div>
                   </TableCell>

@@ -26,46 +26,19 @@ const verdictTone: Record<AnyVerdict, Tone> = {
   AVOID: "negative",
   SELL: "negative",
   "STRONG SELL": "strongNegative",
-};
-
-const toneStyles: Record<Tone, string> = {
-  positive: "border-signal/25 bg-signal/10 text-signal",
-  neutral: "border-gold/25 bg-gold/10 text-gold",
-  negative: "border-negative/25 bg-negative/10 text-negative",
-  strongPositive:
-    "border-signal/45 bg-signal/[0.16] text-signal ring-1 ring-signal/25",
-  strongNegative:
-    "border-negative/45 bg-negative/[0.16] text-negative ring-1 ring-negative/25",
-};
-
-const dotStyles: Record<Tone, string> = {
-  positive: "bg-signal",
-  neutral: "bg-gold",
-  negative: "bg-negative",
-  strongPositive: "bg-signal",
-  strongNegative: "bg-negative",
-};
-
-/**
- * Light-theme badges. BUY / APPLY emerald, SELL / STRONG SELL red, HOLD /
- * WATCH amber, placeholder slate. Dark mode keeps toneStyles above.
+};/**
+ * Verdict badges are solid, bold colour blocks in both themes: a call is the
+ * single most important thing on the row, so it has to read as a stamp rather
+ * than a tinted note. BUY / APPLY emerald, SELL / AVOID red, HOLD amber.
  */
-const lightToneStyles: Record<Tone, string> = {
-  positive: "border-emerald-200 bg-emerald-100 text-emerald-800",
-  neutral: "border-amber-200 bg-amber-100 text-amber-800",
-  negative: "border-red-200 bg-red-100 text-red-800",
+const toneStyles: Record<Tone, string> = {
+  positive: "border-emerald-500 bg-emerald-500 text-white",
+  neutral: "border-amber-400 bg-amber-400 text-amber-950",
+  negative: "border-red-500 bg-red-500 text-white",
   strongPositive:
-    "border-emerald-200 bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300",
+    "border-emerald-600 bg-emerald-600 text-white ring-1 ring-emerald-300/70",
   strongNegative:
-    "border-red-200 bg-red-100 text-red-800 ring-1 ring-red-300",
-};
-
-const lightDotStyles: Record<Tone, string> = {
-  positive: "bg-emerald-600",
-  neutral: "bg-amber-600",
-  negative: "bg-red-600",
-  strongPositive: "bg-emerald-700",
-  strongNegative: "bg-red-700",
+    "border-red-600 bg-red-600 text-white ring-1 ring-red-300/70",
 };
 
 /** True for the two strongest negative calls, used to tint whole rows. */
@@ -80,27 +53,17 @@ export function VerdictBadge({
   verdict: AnyVerdict;
   className?: string;
 }) {
-  const { theme } = useTheme();
-  const light = theme === "light";
   const tone = verdictTone[verdict];
-
-  const strong = tone === "strongPositive" || tone === "strongNegative";
 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] tracking-[0.12em] whitespace-nowrap",
-        strong ? "font-bold" : "font-semibold",
-        light ? lightToneStyles[tone] : toneStyles[tone],
+        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-bold tracking-[0.12em] uppercase whitespace-nowrap shadow-sm",
+        toneStyles[tone],
         className,
       )}
     >
-      <span
-        className={cn(
-          "size-1.5 rounded-full",
-          light ? lightDotStyles[tone] : dotStyles[tone],
-        )}
-      />
+      <span className="size-1.5 rounded-full bg-current opacity-70" />
       {verdict}
     </span>
   );

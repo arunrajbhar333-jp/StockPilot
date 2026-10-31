@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { AddStockDialog } from "@/components/add-stock-dialog";
 import { PageHeader } from "@/components/page-header";
 import { VerdictBadge, isSellVerdict } from "@/components/signals";
+import { VerdictText } from "@/components/verdict-text";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -241,9 +242,10 @@ function BreakdownGrid({ position }: { position: Position }) {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[10px] text-muted-foreground/70">
-        {position.reason}
-      </p>
+      <VerdictText
+        text={position.reason}
+        className="mt-2 text-[10px] text-muted-foreground/70"
+      />
     </div>
   );
 }
@@ -625,9 +627,10 @@ export default function Portfolio() {
                                 Placeholder
                               </span>
                             ) : null}
-                            <p className="text-[10px] leading-relaxed text-muted-foreground">
-                              {position.reason}
-                            </p>
+                            <VerdictText
+                              text={position.reason}
+                              className="min-w-0 flex-1 text-[10px] text-muted-foreground"
+                            />
                           </div>
                         </TableCell>
                       </TableRow>
@@ -736,15 +739,15 @@ export default function Portfolio() {
                       </div>
                     </div>
 
-                    <p className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
+                    <div className="mt-2.5 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
                       {position.aiSource === "placeholder" ? (
                         <span className="mb-1 flex items-center gap-1 text-[9px] font-semibold tracking-wide text-gold uppercase">
                           <TriangleAlert className="size-2.5" />
                           Placeholder AI call
                         </span>
                       ) : null}
-                      {position.reason}
-                    </p>
+                      <VerdictText text={position.reason} />
+                    </div>
 
                     {position.breakdown.length > 0 ? (
                       <>

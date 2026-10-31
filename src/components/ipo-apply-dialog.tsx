@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AiScore, IpoTypeBadge, VerdictBadge } from "@/components/signals";
+import { VerdictText } from "@/components/verdict-text";
 import type { Ipo } from "@/types/domain";
 import { formatInr } from "@/lib/format";
 
@@ -87,9 +88,10 @@ export function IpoApplyDialog({
                   </p>
                   <AiScore score={ipo.aiScore} />
                 </div>
-                <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                  {ipo.thesis}
-                </p>
+                <VerdictText
+                  text={ipo.thesis}
+                  className="mt-2 text-[11px] text-muted-foreground"
+                />
               </div>
 
               <div className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-black/25 px-3.5 py-3">

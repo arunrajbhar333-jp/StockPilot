@@ -3,6 +3,7 @@ import { Loader2, MessageCircle, Send, X } from "lucide-react";
 import { usePortfolioChat, type ChatTurn } from "@/hooks/use-portfolio-actions";
 import { useChatStore } from "@/store/use-chat-store";
 import { useSession } from "@/lib/session";
+import { VerdictText } from "@/components/verdict-text";
 import { cn } from "@/lib/utils";
 
 const SUGGESTIONS = [
@@ -45,7 +46,9 @@ export function AiChatWidget() {
           setTurns((prev) => [...prev, { role: "assistant", text: reply }]),
         onError: (error) =>
           setFailure(
-            error instanceof Error ? error.message : "Reply nahi mil paaya.",
+            error instanceof Error
+              ? error.message
+              : "Uttar upalabdh nahi hua. Kripya dobara prayaas karein.",
           ),
       },
     );
@@ -103,8 +106,8 @@ export function AiChatWidget() {
         {turns.length === 0 ? (
           <div className="space-y-2">
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Apne portfolio, India macro aur crude oil ke baare mein kuch
-              bhi poocho — jawab Hinglish mein milega.
+              Apne portfolio, India macro aur crude oil ke baare mein kuch bhi
+              poochhiye — uttar shisht Hinglish mein milega.
             </p>
             <div className="flex flex-col gap-1.5">
               {SUGGESTIONS.map((suggestion) => (
@@ -125,13 +128,17 @@ export function AiChatWidget() {
           <div
             key={`${turn.role}-${index}`}
             className={cn(
-              "max-w-[92%] rounded-xl px-3 py-2 text-[11.5px] leading-relaxed whitespace-pre-wrap",
+              "max-w-[92%] rounded-xl px-3 py-2 text-[11.5px] leading-relaxed",
               turn.role === "user"
-                ? "self-end bg-primary text-primary-foreground"
+                ? "self-end whitespace-pre-wrap bg-primary text-primary-foreground"
                 : "self-start border border-border bg-muted/50 text-foreground",
             )}
           >
-            {turn.text}
+            {turn.role === "assistant" ? (
+              <VerdictText text={turn.text} />
+            ) : (
+              turn.text
+            )}
           </div>
         ))}
 
@@ -141,7 +148,7 @@ export function AiChatWidget() {
               className="size-3.5 shrink-0 animate-spin"
               strokeWidth={1.5}
             />
-            Soch raha hoon…
+            Vishleshan kiya ja raha hai…
           </div>
         ) : null}
 
@@ -163,7 +170,7 @@ export function AiChatWidget() {
           type="text"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder="e.g. TATA MOTORS hold karun?"
+          placeholder="e.g. TATA MOTORS hold karun ya book profit?"
           aria-label="Ask the AI assistant"
           className="relative min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 pr-10 text-[12px] text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/30 focus:outline-none"
         />
