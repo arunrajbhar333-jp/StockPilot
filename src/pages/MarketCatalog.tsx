@@ -283,16 +283,17 @@ export default function MarketCatalog() {
               >
                 {item}
               </button>
-            ))}
+            )            )}
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2 sm:px-5">        <p className="text-[9px] tracking-[0.14em] text-muted-foreground/70 uppercase">
-          Ranked by AI score
-        </p>            <p className="num text-[9px] tracking-wide text-muted-foreground/60">
-            {revisionStatus}
+        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2 sm:px-5">            <p className="text-[9px] tracking-[0.14em] text-muted-foreground/70 uppercase">
+            Ranked by AI score
           </p>
-        </div>
+            <p className="num text-[9px] tracking-wide text-muted-foreground/60">
+              {revisionStatus}
+            </p>
+          </div>
 
         {visible.length > 0 ? (
           <>
