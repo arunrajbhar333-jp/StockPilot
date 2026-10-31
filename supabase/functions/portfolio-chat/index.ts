@@ -41,7 +41,23 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Shared with the web app: a throttled Gemini call is reported with this
+// sentinel so the widget can show a friendly toast instead of a failure.
+const RATE_LIMIT_CODE = "RATE_LIMIT";
+const RATE_LIMIT_MESSAGE =
+  "AI limit reached. Please wait a minute or try tomorrow.";
+
+/** Gemini answers 429, or 400/403 carrying RESOURCE_EXHAUSTED, when throttled. */
+function isRateLimit(status: number, detail: string): boolean {
+  return (
+    status === 429 || /RESOURCE_EXHAUSTED|rate limit|quota exceeded/i.test(detail)
+  );
+}
+
 const MAX_MESSAGE_LENGTH = 2000;
+// Hard cap on the conversation we send back to Gemini: the last 6 turns only,
+// each turn trimmed to 400 characters below. Older context is dropped so the
+// prompt can never grow without bound.
 const MAX_HISTORY = 6;
 
 function json(body: unknown, status = 200): Response {
@@ -92,20 +108,37 @@ interface CatalogRow {
   current_price: number | string | null;
   ai_verdict: string | null;
   ai_reasoning: string | null;
-}
-
-/** The shape the IPO query returns. Column names differ across migrations, so
- *  the function reads by name and normalizes before passing it to Gemini.
+}/** Every column ipoLines() renders, so an IPO answer always carries the full
+ *  brief: name, board, window, price band, lot, GMP, subscription, score and
+ *  verdict.
  */
+const IPO_FULL_COLUMNS =
+  "id, company_name, type, sector, price_band_low, price_band_high, lot_size, " +
+  "issue_size, gmp, gmp_pct, subscription, open_date, close_date, status, " +
+  "ai_score, verdict, thesis";
+
+/** Fallback for a project whose migration predates one of those columns. */
+const IPO_MINIMAL_COLUMNS =
+  "id, company_name, type, gmp, subscription, ai_score, verdict, status";
+
 interface IpoRow {
   id: string | null;
   company_name: string | null;
   type: string | null;
+  sector: string | null;
+  price_band_low: number | string | null;
+  price_band_high: number | string | null;
+  lot_size: number | string | null;
+  issue_size: string | null;
   gmp: number | string | null;
+  gmp_pct: number | string | null;
   subscription: number | string | null;
+  open_date: string | null;
+  close_date: string | null;
+  status: string | null;
   ai_score: number | string | null;
   verdict: string | null;
-  status: string | null;
+  thesis: string | null;
 }
 
 interface Turn {
@@ -261,27 +294,91 @@ function catalogLines(rows: CatalogRow[]): string[] {
   });
 }
 
-/** One line per IPO so the assistant can answer about fresh issues. */
+/** One line per IPO: the complete underwriting brief, never a summary.
+ *  Fields the fallback columns did not return are simply omitted.
+ */
 function ipoLines(rows: IpoRow[]): string[] {
   if (!rows.length) return ["(No live/upcoming IPOs returned.)"];
 
   return rows.map((row) => {
+    const low = number(row.price_band_low);
+    const high = number(row.price_band_high);
+    const lotSize = number(row.lot_size);
     const gmp = number(row.gmp);
     const subscription = number(row.subscription);
     const score = number(row.ai_score);
-    const name =
-      row.company_name ||
-      `ipo-${row.id ?? "unknown"}`;
+    const name = row.company_name || `ipo-${row.id ?? "unknown"}`;
     const type = row.type || "IPO";
 
-    return [
-      `- ${name} (${type})`,
-      `  gmp INR ${gmp.toFixed(0)} · subscription ${subscription.toFixed(1)}x`,
-      `  ai_score: ${score.toFixed(1)}/10 · verdict: ${row.verdict ?? "not analysed"}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const band =
+      low > 0 && high > 0
+        ? `INR ${low.toFixed(2)}-INR ${high.toFixed(2)}/share`
+        : "price band not published";
+    const lot =
+      lotSize > 0
+        ? `${lotSize} shares (1 lot = INR ${
+            high > 0 ? (lotSize * high).toFixed(0) : "?"
+          })`
+        : "lot size not published";
+    const gmpLine =
+      row.gmp_pct !== null && row.gmp_pct !== undefined
+        ? `INR ${gmp.toFixed(0)} (${number(row.gmp_pct).toFixed(1)}% over the upper band)`
+        : gmp > 0
+          ? `INR ${gmp.toFixed(0)}`
+          : "not quoted";
+    const subscriptionLine =
+      subscription > 0
+        ? `${subscription.toFixed(2)}x`
+        : "not reported yet (book not open or not published)";
+
+    const lines = [
+      `- ${name} (${type}${row.sector ? ` · ${row.sector}` : ""})`,
+      `  window: ${row.open_date ?? "unknown"} -> ${row.close_date ?? "unknown"} (status: ${row.status ?? "unknown"})`,
+      `  price band: ${band} · lot: ${lot}`,
+      row.issue_size ? `  issue size: ${row.issue_size}` : "",
+      `  gmp: ${gmpLine}`,
+      `  subscription: ${subscriptionLine}`,
+      `  ai_score: ${score.toFixed(1)}/10 · verdict: ${row.verdict ?? "not analysed"}`,      row.thesis ? `  underwriting note: ${row.thesis.slice(0, 300)}` : "",
+    ] ;
+
+    return lines.filter(Boolean).join("\n");
   });
+}
+
+/**
+ * Reads IPO rows. Tries the full column set first and silently falls back to
+ * the minimal one, because a project whose migration predates `lot_size` (say)
+ * must still get an answer rather than a 400 from PostgREST. When `needle` is
+ * given the rows are matched by name in SQL — that lookup decides the answer's
+ * scope, so it is not re-filtered in JS.
+ */
+async function readIpos(
+  admin: ReturnType<typeof createClient>,
+  limit: number,
+  needle?: string,
+): Promise<IpoRow[]> {
+  const run = async (columns: string): Promise<IpoRow[]> => {
+    const query = admin.from("ipos").select(columns);
+    if (needle) query.or(`company_name.ilike.%${needle}%`);
+
+    const { data, error } = await query
+      .order("ai_score", { ascending: false, nullsFirst: false })
+      .limit(limit);
+
+    if (error) throw new Error(error.message);
+    return (data ?? []) as unknown as IpoRow[];
+  };
+
+  try {
+    return await run(IPO_FULL_COLUMNS);
+  } catch (error) {
+    console.warn(
+      `[portfolio-chat] full IPO select failed (${
+        error instanceof Error ? error.message : String(error)
+      }); retrying with minimal columns.`,
+    );
+    return await run(IPO_MINIMAL_COLUMNS);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +412,10 @@ const STOP_WORDS = new Set([
 const MACRO_QUESTION =
   /\b(nifty|sensex|bank\s?nifty|crude|brent|wti|oil|usd|dollar|rupee|inr|inflation|cpi|rbi|repo|fed|global|macro|economy|economic|budget|market|markets|index|indices|fii|dii)\b/i;
 
+/** Signals that the question is about a fresh issue rather than a holding. */
+const IPO_INTENT =
+  /\b(ipo|initial public offering|sme|mainboard|apply|applied|application|subscription|gmp|grey market|listing gains|lot size|price band)\b/i;
+
 /** Signals that the member is asking for a call on a named instrument. */
 const STOCK_INTENT =
   /\b(buy|buying|sell|selling|hold|holding|analyz\w*|analys\w*|target|verdict|invest\w*|entry|exit|kharid\w*|bech\w*|rakh\w*)\b/i;
@@ -325,9 +426,67 @@ function key(value: string | null | undefined): string {
 
 function words(value: string): string[] {
   return value
-    .replace(/[^A-Za-z0-9&\-\s]/g, " ")
+    .replace(/[^A-Za-z0-9&-\s]/g, " ")
     .split(/\s+/)
     .filter(Boolean);
+}
+
+/** Tags and corporate suffixes that are never part of a company name. Stripped
+ *  before matching, so "NexaGrid Energy (SME) IPO" reads as "NexaGrid Energy"
+ *  and "Yes Bank Ltd" as "Yes Bank". Pairs with the STOP_WORDS list above,
+ *  which already carries "price", "analyze", "should", "buy", "hold", "sell".
+ */
+const NAME_NOISE = new Set([
+  "ipo",
+  "sme",
+  "mainboard",
+  "ltd",
+  "limited",
+  "plc",
+  "pvt",
+  "llp",
+  "inc",
+  "corp",
+  "corporation",
+  "co",
+  "company",
+  "issue",
+  "price",
+  "pricing",
+  "detail",
+  "details",
+  "review",
+  "apply",
+  "application",
+  "tag",
+]);
+
+/** True for filler and name-noise words: either one ends a candidate name. */
+function isNameNoise(word: string): boolean {
+  const lowered = word.toLowerCase();
+  return STOP_WORDS.has(lowered) || NAME_NOISE.has(lowered);
+}
+
+/** Stop words that also sit inside company names — "Yes Bank", "Oil India".
+ *  They end a name only when nothing is open yet: "bank nifty" still yields
+ *  no candidate, while "... Yes Bank Ltd" keeps its two-word name. */
+const NAME_CONTINUATIONS = new Set(["bank", "oil"]);
+
+/** A phrase counts as a company name: at least 4 alphanumeric characters, or a
+ *  3-character uppercase ticker like "BSE" / "SBI". Short title-case fragments
+ *  ("Yes") left behind by a stop-word split never qualify. */
+function isCandidateName(phrase: string): boolean {
+  const k = key(phrase);
+  if (k.length >= 4) return true;
+  return k.length === 3 && phrase === phrase.toUpperCase();
+}
+
+/** Company words with tags and suffixes removed: "Yes Bank Ltd" -> "yes bank". */
+function nameWords(name: string | null | undefined): string[] {
+  return (name ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((part) => part.length > 0 && !NAME_NOISE.has(part));
 }
 
 /** Consecutive non-filler words, e.g. "Aarti Industries" from a full question. */
@@ -337,14 +496,23 @@ function extractMentionedNames(message: string): string[] {
 
   const flush = () => {
     if (current.length > 0) {
-      const phrase = current.join(" ");
-      if (key(phrase).length >= 3) groups.push(phrase);
+      const phrase = current.join(" ").replace(/\s+/g, " ").trim();
+      if (isCandidateName(phrase)) groups.push(phrase);
       current = [];
     }
   };
 
-  for (const word of words(message)) {
-    if (STOP_WORDS.has(word.toLowerCase())) {
+  // Parenthesised tags carry no name: "(SME)", "(NSE)", "(India)".
+  const cleaned = message.replace(/\([^)]*\)/g, " ");
+
+  for (const word of words(cleaned)) {
+    // A name can contain a filler word ("Yes Bank Ltd"): keep building it.
+    if (current.length > 0 && NAME_CONTINUATIONS.has(word.toLowerCase())) {
+      current.push(word);
+      if (current.length === 4) flush();
+      continue;
+    }
+    if (isNameNoise(word)) {
       flush();
       continue;
     }
@@ -383,6 +551,11 @@ function matchesInstrument(
   const nameKey = key(name);
   if (nameKey.length >= 4 && messageKey.includes(nameKey)) return true;
 
+  // Tags and corporate suffixes stripped, so "Yes Bank Ltd" and
+  // "NexaGrid Energy (SME)" match on the bare name.
+  const bareKey = nameWords(name).join("");
+  if (bareKey.length >= 4 && messageKey.includes(bareKey)) return true;
+
   // "Aarti Industries" typed as "Aarti Inds" or with a suffix: every meaningful
   // word of the stored name appears somewhere in the question.
   const nameParts = (name ?? "")
@@ -394,6 +567,16 @@ function matchesInstrument(
   }
 
   return false;
+}
+
+/** Sanitizes a name for use inside a PostgREST `.or()` filter. PostgREST reads
+ *  commas, parentheses, dots, quotes and backslashes as filter syntax, so any
+ *  name interpolated into that filter is reduced to letters, digits and spaces
+ *  first. Removed out of the serve body so the routing harness can reach it
+ *  directly for the HGS India / YESBANK regression tests.
+ */
+function filterValue(raw: string): string {
+  return raw.replace(/[^a-z0-9]+/gi, " ").replace(/\s+/g, " ").trim();
 }
 
 Deno.serve(async (req: Request) => {
@@ -509,19 +692,21 @@ Deno.serve(async (req: Request) => {
   const catalogCount = catalogRows.length;
 
   // Live/upcoming IPOs: the assistant uses this when the member asks about a
-  // fresh issue. Column names vary across migrations, so the function picks the
-  // available Knockout columns by name.
-  const { data: ipos, error: iposError } = await admin
-    .from("ipos")
-    .select("id, company_name, type, gmp, subscription, ai_score, verdict, status")
-    .order("ai_score", { ascending: false, nullsFirst: false })
-    .limit(20);
-
-  if (iposError) {
-    return json({ error: `Could not read the IPOs: ${iposError.message}` }, 500);
+  // fresh issue. readIpos() fetches the full underwriting brief and falls back
+  // to the minimal column set if a project's migration predates one of them.
+  let ipoRows: IpoRow[] = [];
+  try {
+    ipoRows = await readIpos(admin, 20);
+  } catch (error) {
+    return json(
+      {
+        error: `Could not read the IPOs: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      },
+      500,
+    );
   }
-
-  const ipoRows = (ipos ?? []) as unknown as IpoRow[];
 
   const apiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
   if (!apiKey) {
@@ -563,7 +748,7 @@ Deno.serve(async (req: Request) => {
           held.symbol && row.symbol && key(held.symbol) === key(row.symbol),
       ),
   );
-  const ipoMatches = ipoRows.filter((row) =>
+  let ipoMatches = ipoRows.filter((row) =>
     matchesInstrument(message, null, row.company_name),
   );
   const mentioned = extractMentionedNames(message);
@@ -577,7 +762,7 @@ Deno.serve(async (req: Request) => {
     catalogMatches.length === 0 &&
     mentioned.length > 0
   ) {
-    const needle = mentioned[0].replace(/[%,()*]/g, "").trim();
+    const needle = filterValue(mentioned[0]);
     if (needle.length >= 3) {
       const { data: found } = await admin
         .from("market_catalog")
@@ -591,10 +776,33 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  // An IPO question the capped sample missed is looked up by name BEFORE the
+  // mode is decided: a portfolio holding with a similar name must never answer
+  // a question about a fresh issue. The SQL match is the authority here, so
+  // these rows are taken as-is rather than re-filtered in JS.
+  const ipoNeedle = filterValue(mentioned[0] ?? "");
+  if (
+    ipoMatches.length === 0 &&
+    IPO_INTENT.test(message) &&
+    ipoNeedle.length >= 3
+  ) {
+    try {
+      ipoMatches = await readIpos(admin, 5, ipoNeedle);
+    } catch (error) {
+      console.warn(
+        `[portfolio-chat] IPO name lookup failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   let mode: "ipo" | "instrument" | "macro" | "portfolio" | "unknown";
   let context = "";
   let missing = "";
 
+  // STRICT PRIORITY: an IPO match or an instrument match decides the mode.
+  // Portfolio mode is only reached when the question names nothing we track.
   if (ipoMatches.length > 0) {
     mode = "ipo";
     context = ipoMatches.map((row) => ipoLines([row])[0]).join("\n\n");
@@ -613,6 +821,11 @@ Deno.serve(async (req: Request) => {
     // A named instrument that exists nowhere in our data: empty context.
     mode = "unknown";
     missing = mentioned[0].slice(0, 60);
+  } else if (IPO_INTENT.test(message)) {
+    // An IPO question with no matching row: never fall back to the portfolio
+    // or to macro mode — answer with the "not available" instruction instead.
+    mode = "unknown";
+    missing = ipoNeedle || "that IPO";
   } else if (MACRO_QUESTION.test(message)) {
     mode = "macro";
     context = await marketSnapshot();
@@ -630,9 +843,17 @@ Deno.serve(async (req: Request) => {
           "Do not give a verdict, do not estimate a price, and do not mention Nifty 50, Sensex, crude oil, USD/INR or any other market-wide indicator.",
         ].join("\n")
       : mode === "instrument"
-        ? "The member asked about one specific stock. Use only its row(s) in CONTEXT. Do not bring in Nifty 50, Sensex, crude oil, USD/INR, inflation or global cues: they were not asked for and are not in the context. Answer the exact question asked, then stop."
+        ? [
+            "The member asked about one specific stock. Use only its row(s) in CONTEXT — nothing else may appear in the answer.",
+            "Do not substitute any other holding from their portfolio, and do not bring in Nifty 50, Sensex, crude oil, USD/INR, inflation or global cues: they were not asked for and are not in the context.",
+            "Answer the exact question asked, then stop.",
+          ].join(" ")
         : mode === "ipo"
-          ? "The member asked about one IPO. Use only its row in CONTEXT. Answer the exact question asked, then stop: no macro commentary."
+          ? [
+              "The member asked about one IPO. Use only its row in CONTEXT, which carries the company, the board (Mainboard/SME), open and close dates, price band, lot size, GMP, subscription, AI score and verdict.",
+              "Answer the exact question asked — and when the member wants a verdict, a rating or a price, give the FULL analysis in 2-4 sentences explaining WHY it is APPLY, WATCH or AVOID: quote the subscription figure and the GMP figure from the CONTEXT and say what they mean for listing gains. Never answer with one line, never omit the reasoning.",
+              "No macro commentary and no portfolio stocks.",
+            ].join(" ")
           : mode === "macro"
             ? "The member asked about the overall market. Use only the live quotes in CONTEXT, and say a figure is unavailable rather than guessing it."
             : "The member asked about their portfolio. Answer from the holdings in CONTEXT only, and say plainly when the holdings do not cover the question.";
@@ -662,8 +883,9 @@ Deno.serve(async (req: Request) => {
             parts: [
               {
                 text: [
-                  "You are StockPilot AI, a senior SEBI-registered equity research analyst advising an Indian retail investor.",
-                  "You speak courteous, professional Hinglish in Roman script and address the member as 'aap'; never use 'tu', 'tum', 'bhai', slang or exclamation marks.",
+                  "You are a SEBI-registered fund manager with 20+ years of experience advising an Indian retail investor.",
+                  "You have seen multiple market cycles — bull runs, scams, COVID, rate shocks — and your predictions aim for 80-90% accuracy by relying strictly on data, a confluence of macro and micro factors, and risk management.",
+                  "You speak strict, professional Hinglish in Roman script and address the member as 'aap'; never use 'tu', 'tum', 'bhai', slang, exclamation marks or over-familiarity.",
                   "STRICT RULES, all mandatory:",
                   "1. Answer ONLY from the CONTEXT in the user message. You have no other knowledge for this answer. If the CONTEXT is empty or does not cover the question, say plainly that the data is not available.",
                   "2. NEVER invent or insert market-wide data: no Nifty 50 or Sensex levels, crude oil or Brent prices, USD/INR, inflation, RBI policy, FII/DII flows or global cues. Use them only when the member explicitly asks about the overall market AND the CONTEXT contains the figure.",
@@ -671,9 +893,12 @@ Deno.serve(async (req: Request) => {
                   "4. Never repeat a previous reply or reuse its wording. Each answer must respond to the current question directly; if the member repeats a question, restate the answer more compactly, do not replay the same paragraph.",
                   "5. Be direct and brief: 2-4 sentences for a stock or IPO question, at most 5 for a portfolio question. No preamble, no recap of the question.",
                   "6. Quote prices, verdicts, confidence and horizons only as they appear in the CONTEXT. Keep numbers, tickers and ratios in English.",
-                  "7. Only when the CONTEXT carries a stored verdict for the instrument the member asked about, end with the decision on its own final line exactly like **FINAL VERDICT: BUY** (or HOLD, SELL, STRONG BUY, STRONG SELL), and write nothing after it. When you have no data, emit no verdict line at all.",
+                  "7. Only when the CONTEXT carries a stored verdict for the instrument the member asked about, end with the decision on its own final line exactly like **FINAL VERDICT: BUY** (or HOLD, SELL, STRONG BUY, STRONG SELL for a stock; APPLY, WATCH, AVOID for an IPO), and write nothing after it. When you have no data, emit no verdict line at all.",
                   "8. Light markdown only: plain sentences and **bold** for the verdict line. No headings, bullet lists, tables or JSON.",
                   "9. Close the body with a one-line reminder that this is research, not investment advice — but only when you actually gave an answer.",
+                  "10. On evidence: for a portfolio or stock call, judge on valuation, debt load and macro tailwinds together, never on one number. For an IPO, a high-conviction reading needs a confluence of a high GMP, a strong subscription book and a fundamentally sound company — without all three, keep the tone cautious.",
+                  "11. SCOPE: when the CONTEXT contains the stock or IPO the member asked about, answer ONLY about it. Never substitute a holding from their portfolio for the instrument they named, never pad the answer with their other positions, and mention a portfolio stock only when the member explicitly asks for a comparison.",
+                  "12. ANSWER THE QUESTION, NOT A SUMMARY: if the member asks for a verdict, a rating or a price, give 2-4 complete sentences that state WHY, using the figures in the CONTEXT — subscription and GMP for an IPO, valuation, debt and macro tailwinds for a stock. A one-line verdict or \"it depends\" is never acceptable.",
                 ].join(" "),
               },
             ],
@@ -684,9 +909,11 @@ Deno.serve(async (req: Request) => {
           ],
           generationConfig: {
             // Low temperature keeps the model on the supplied rows instead of
-            // free-associating macro commentary.
+            // free-associating macro commentary. 500 output tokens is enough
+            // for the 2-5 sentence answers we ask for and no more, so a long
+            // reply can never run the bill or overflow the widget.
             temperature: 0.2,
-            maxOutputTokens: 400,
+            maxOutputTokens: 500,
           },
         }),
       },
@@ -697,6 +924,10 @@ Deno.serve(async (req: Request) => {
       console.error(
         `[portfolio-chat] Gemini HTTP ${response.status} for model "${model}": ${detail.slice(0, 500)}`,
       );
+      if (isRateLimit(response.status, detail)) {
+        // Quota, not a broken assistant: the widget turns this into a toast.
+        return json({ error: RATE_LIMIT_CODE, message: RATE_LIMIT_MESSAGE }, 429);
+      }
       return json(
         { error: `The assistant is unavailable right now (Gemini ${response.status}).` },
         502,
