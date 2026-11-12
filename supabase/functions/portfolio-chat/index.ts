@@ -197,10 +197,11 @@ async function fetchQuote(symbol: string): Promise<Quote | null> {
 }
 
 async function marketSnapshot(): Promise<string> {
-  const [crude, sp500, nifty, usdinr] = await Promise.all([
+  const [crude, sp500, nifty, sensex, usdinr] = await Promise.all([
     fetchQuote("CL=F"),
     fetchQuote("^GSPC"),
     fetchQuote("^NSEI"),
+    fetchQuote("^BSESN"),
     fetchQuote("USDINR=X"),
   ]);
 
@@ -218,6 +219,11 @@ async function marketSnapshot(): Promise<string> {
   if (nifty) {
     lines.push(
       `Nifty 50: ${nifty.price.toFixed(0)} (${nifty.changePct >= 0 ? "+" : ""}${nifty.changePct.toFixed(2)}%)`,
+    );
+  }
+  if (sensex) {
+    lines.push(
+      `Sensex (BSE): ${sensex.price.toFixed(0)} (${sensex.changePct >= 0 ? "+" : ""}${sensex.changePct.toFixed(2)}%)`,
     );
   }
   if (usdinr) lines.push(`USD/INR: ${usdinr.price.toFixed(2)}`);
@@ -410,7 +416,20 @@ const STOP_WORDS = new Set([
 
 /** Explicit overall-market questions are the only ones that get macro quotes. */
 const MACRO_QUESTION =
-  /\b(nifty|sensex|bank\s?nifty|crude|brent|wti|oil|usd|dollar|rupee|inr|inflation|cpi|rbi|repo|fed|global|macro|economy|economic|budget|market|markets|index|indices|fii|dii)\b/i;
+  /\b(nifty|sensex|bank\s?nifty|bse|crude|brent|wti|oil|usd|dollar|rupee|inr|inflation|cpi|rbi|repo|fed|global|macro|economy|economic|budget|market|markets|index|indices|fii|dii)\b/i;
+
+/** Index names route to the live snapshot even when they look like a ticker
+ *  ("BSE", "NIFTY"): asked on their own they are the index, not a stock. A row
+ *  that genuinely matches an instrument still wins, because instrument mode is
+ *  resolved before this check runs.
+ */
+const INDEX_QUESTION = /\b(bse|sensex|nifty|bank\s?nifty)\b/i;
+
+/** The whole message is just an index name ("BSE", "bse?", "NIFTY"). Such a
+ *  question is never about a stock, so it goes to macro even if a catalog row
+ *  happens to share the acronym.
+ */
+const BARE_INDEX_QUESTION = /^\s*(bse|sensex|nifty|bank\s?nifty)\s*[?.!]*\s*$/i;
 
 /** Signals that the question is about a fresh issue rather than a holding. */
 const IPO_INTENT =
@@ -467,18 +486,28 @@ function isNameNoise(word: string): boolean {
   return STOP_WORDS.has(lowered) || NAME_NOISE.has(lowered);
 }
 
-/** Stop words that also sit inside company names — "Yes Bank", "Oil India".
- *  They end a name only when nothing is open yet: "bank nifty" still yields
- *  no candidate, while "... Yes Bank Ltd" keeps its two-word name. */
+/** Stop words that also sit inside company names — "Yes Bank", "Oil India",
+ *  and now "BSE" when it appears as part of a longer market phrase such as
+ *  "bank nifty" or a clause that ends with "bse index". They end a name only
+ *  when nothing is open yet: "bank nifty" still yields no candidate, while
+ *  "... Yes Bank Ltd" keeps its two-word name.
+ *
+ *  NOTE: "BSE" as a standalone macro keyword is now handled by MACRO_QUESTION
+ *  below, so a bare "BSE" question will route to mode = "macro" and use the
+ *  live market snapshot. This list is only for cases where "bse" appears
+ *  inside a longer phrase such as "bse index".
+ */
 const NAME_CONTINUATIONS = new Set(["bank", "oil"]);
-
 /** A phrase counts as a company name: at least 4 alphanumeric characters, or a
  *  3-character uppercase ticker like "BSE" / "SBI". Short title-case fragments
  *  ("Yes") left behind by a stop-word split never qualify. */
 function isCandidateName(phrase: string): boolean {
   const k = key(phrase);
   if (k.length >= 4) return true;
-  return k.length === 3 && phrase === phrase.toUpperCase();
+  // A 3-character token is a ticker/acronym like "BSE", "SBI" or "HGS".
+  // Lowercase forms count too ("hgs"): the SQL lookup still has to match a real
+  // catalog row, so this only widens which questions get looked up.
+  return k.length === 3;
 }
 
 /** Company words with tags and suffixes removed: "Yes Bank Ltd" -> "yes bank". */
@@ -548,6 +577,8 @@ function matchesInstrument(
   const symbolKey = key(symbol);
   if (symbolKey.length >= 3 && messageKey.includes(symbolKey)) return true;
 
+  // Full name match on the row itself, e.g. "Aditya Birla Fashion" against a
+  // question that only says "Birla".
   const nameKey = key(name);
   if (nameKey.length >= 4 && messageKey.includes(nameKey)) return true;
 
@@ -556,13 +587,47 @@ function matchesInstrument(
   const bareKey = nameWords(name).join("");
   if (bareKey.length >= 4 && messageKey.includes(bareKey)) return true;
 
-  // "Aarti Industries" typed as "Aarti Inds" or with a suffix: every meaningful
-  // word of the stored name appears somewhere in the question.
-  const nameParts = (name ?? "")
+  // The words of the stored name, keeping separators out: "HGS (India)" ->
+  // ["hgs", "india"], "Aditya Birla Fashion and Retail Ltd" -> ["aditya", ...].
+  const storedParts = (name ?? "")
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((part) => part.length > 3);
-  if (nameParts.length >= 2 && nameParts.every((part) => messageKey.includes(part))) {
+    .filter((part) => part.length > 0);
+
+  // Short acronym prefix match: the question is a single 3+ letter word ("HGS")
+  // and the stored name STARTS with that word as its own leading word, i.e. the
+  // name continues after it with a separator or parenthesis — "HGS (India)" or
+  // "HDFC Ltd". This is the fix for "HGS" -> "HGS (India)": the old logic only
+  // accepted the full name or a multi-word match, so the acronym fell through.
+  const askedTokens = messageKey.split(/[^a-z0-9]+/).filter((token) => token.length > 0);
+  if (askedTokens.length === 1 && askedTokens[0].length >= 3) {
+    const asked = askedTokens[0];
+    const head = storedParts[0] ?? "";
+    // A one-word name must equal the token; a multi-word name must continue
+    // after the token, so "HGS" never matches a name that merely starts with
+    // those letters mid-word.
+    if (head === asked) return true;
+    if (
+      storedParts.length > 1 &&
+      head.startsWith(asked) &&
+      !STOP_WORDS.has(asked)
+    ) {
+      return true;
+    }
+  }
+
+  // Partial/abbreviated name match: any meaningful word (3+ chars) of the stored
+  // name appears anywhere in the question. That lets "HDFC" or "Birla" match
+  // rows whose full name starts with "HDFC ..." or "... Birla".
+  const nameParts = storedParts.filter(
+    (part) => part.length >= 3 && !STOP_WORDS.has(part) && !NAME_NOISE.has(part),
+  );
+  if (nameParts.some((part) => messageKey.includes(part))) return true;
+
+  // "Aarti Industries" typed as "Aarti Inds" or with a suffix: every meaningful
+  // word of the stored name appears somewhere in the question.
+  const longParts = storedParts.filter((part) => part.length > 3);
+  if (longParts.length >= 2 && longParts.every((part) => messageKey.includes(part))) {
     return true;
   }
 
@@ -806,6 +871,12 @@ Deno.serve(async (req: Request) => {
   if (ipoMatches.length > 0) {
     mode = "ipo";
     context = ipoMatches.map((row) => ipoLines([row])[0]).join("\n\n");
+  } else if (BARE_INDEX_QUESTION.test(message)) {
+    // A bare "BSE" / "Nifty" / "Sensex" is the index itself, never a stock or a
+    // missing ticker: answer from the live snapshot first, before any name
+    // matching can claim it.
+    mode = "macro";
+    context = await marketSnapshot();
   } else if (
     heldMatches.length > 0 ||
     catalogMatches.length > 0 ||
@@ -817,16 +888,23 @@ Deno.serve(async (req: Request) => {
       ...catalogMatches.map((row) => catalogLines([row])[0]),
       ...lookedUp.map((row) => catalogLines([row])[0]),
     ].join("\n\n");
+  } else if (INDEX_QUESTION.test(message)) {
+    // "BSE", "Nifty", "Sensex" as the subject: these are indices, so answer from
+    // the live snapshot instead of reporting a missing stock named "BSE". This
+    // is checked before the unknown-name branch, which is what used to swallow
+    // an all-caps "BSE" (it looked like a ticker with no data).
+    mode = "macro";
+    context = await marketSnapshot();
   } else if (mentioned.length > 0 && looksLikeStockQuestion(message, mentioned)) {
     // A named instrument that exists nowhere in our data: empty context.
     mode = "unknown";
     missing = mentioned[0].slice(0, 60);
-  } else if (IPO_INTENT.test(message)) {
-    // An IPO question with no matching row: never fall back to the portfolio
-    // or to macro mode — answer with the "not available" instruction instead.
-    mode = "unknown";
-    missing = ipoNeedle || "that IPO";
   } else if (MACRO_QUESTION.test(message)) {
+    // An explicit overall-market question (Nifty, Sensex, crude, USD/INR,
+    // inflation, RBI, FII/DII, BSE index, etc.) gets the live snapshot.
+    // Now "BSE" is a recognized macro keyword, so a bare "BSE" question goes
+    // straight to macro and uses the live market snapshot rather than being
+    // treated as a missing stock named "BSE".
     mode = "macro";
     context = await marketSnapshot();
   } else {
@@ -891,7 +969,8 @@ Deno.serve(async (req: Request) => {
                   "2. NEVER invent or insert market-wide data: no Nifty 50 or Sensex levels, crude oil or Brent prices, USD/INR, inflation, RBI policy, FII/DII flows or global cues. Use them only when the member explicitly asks about the overall market AND the CONTEXT contains the figure.",
                   "3. If the member asks about a specific stock that is not in the CONTEXT, reply only that the data for that stock is not available in the current market catalog, and that it is not in the tracked universe so you cannot give a verdict. Never give, guess or imply a verdict for a stock you have no data for.",
                   "4. Never repeat a previous reply or reuse its wording. Each answer must respond to the current question directly; if the member repeats a question, restate the answer more compactly, do not replay the same paragraph.",
-                  "5. Be direct and brief: 2-4 sentences for a stock or IPO question, at most 5 for a portfolio question. No preamble, no recap of the question.",
+                  "5. When we resolved the member's partial or abbreviated name to a full instrument (for example 'Birla' to 'Aditya Birla Fashion and Retail Ltd' or 'HDFC' to 'HDFC Ltd'), answer confidently about that resolved instrument using only its CONTEXT. Do not apologize for the abbreviation, do not say you are guessing, and do not mention the abbreviation the member used unless it is needed to answer. Treat the resolved name as exactly what the member asked about.",
+                  "6. Be direct and brief: 2-4 sentences for a stock or IPO question, at most 5 for a portfolio question. No preamble, no recap of the question.",
                   "6. Quote prices, verdicts, confidence and horizons only as they appear in the CONTEXT. Keep numbers, tickers and ratios in English.",
                   "7. Only when the CONTEXT carries a stored verdict for the instrument the member asked about, end with the decision on its own final line exactly like **FINAL VERDICT: BUY** (or HOLD, SELL, STRONG BUY, STRONG SELL for a stock; APPLY, WATCH, AVOID for an IPO), and write nothing after it. When you have no data, emit no verdict line at all.",
                   "8. Light markdown only: plain sentences and **bold** for the verdict line. No headings, bullet lists, tables or JSON.",
@@ -956,4 +1035,4 @@ Deno.serve(async (req: Request) => {
     catalogCount,
     ipoCount: ipoRows.length,
   });
-}); // Deploy test - [aaj ki date]
+}); // Deploy marker: 2026-11-12 (BSE macro + HGS acronym match)
