@@ -10,7 +10,7 @@ Gemini and stores the score, verdict and underwriting note on the row.
 Alerts go out through the send-telegram-alert Edge Function (Hinglish copy,
 one bot token held server-side):
   * IPO T-1 — an issue opening tomorrow, sent once per issue.
-  * IPO T-10 — an issue opening today, sent between 09:50 and 09:59 IST only.
+  * IPO T-10 — an issue opening today, sent from 09:45 to before 10:00 IST.
   * Portfolio — only when a holding's verdict changes after a >1.5% move.
   * New buy — a watchlist stock in market_catalog turning STRONG BUY that the
     member does not already own.
@@ -321,9 +321,17 @@ def fetch_quote(session: requests.Session, ticker: str, timeout: int) -> Quote |
         if isinstance(value, (int, float)) and value > 0
     ]
     price = to_float(meta.get("regularMarketPrice")) or (closes[-1] if closes else None)
+
+    # `range=1d` makes both of these the PREVIOUS SESSION close, which is the
+    # correct denominator for the day's move (verified against ^BSESN: today's
+    # first 15-minute bar opened at 82127 while this reported 81879 — the prior
+    # close, not today's open). Do not widen the range to 5d/1mo: Yahoo then
+    # reports the close before the whole window, which turns a multi-day gain
+    # into a fake one-day move. That exact bug existed in
+    # supabase/functions/portfolio-chat/index.ts and was fixed there.
     previous = (
-        to_float(meta.get("chartPreviousClose"))
-        or to_float(meta.get("previousClose"))
+        to_float(meta.get("previousClose"))
+        or to_float(meta.get("chartPreviousClose"))
         or price
     )
 
@@ -381,6 +389,12 @@ def nse_session(timeout: int) -> requests.Session:
 def nse_get_json(
     session: requests.Session, url: str, timeout: int, attempts: int = 3
 ) -> Any | None:
+    """One NSE JSON fetch, retried `attempts` times.
+
+    Every failed attempt is reported to record_nse_failure(): three failures
+    in a row means the feed is not coming back this run, which is the condition
+    that raises the admin alert.
+    """
     for attempt in range(1, attempts + 1):
         try:
             response = session.get(
@@ -392,14 +406,22 @@ def nse_get_json(
                 timeout=timeout,
             )
             if response.status_code in (401, 403) and attempt < attempts:
+                record_nse_failure(f"HTTP {response.status_code} for {url}")
                 session.get(NSE_HOME, timeout=timeout)
                 time.sleep(1.0)
                 continue
             response.raise_for_status()
-            return response.json()
+            payload = response.json()
         except (requests.RequestException, ValueError) as error:
+            record_nse_failure(f"{url}: {error}")
             LOG.warning("NSE request failed (%s/%s) %s: %s", attempt, attempts, url, error)
             time.sleep(1.0)
+            continue
+
+        # A working response clears the streak: only consecutive failures alert.
+        reset_nse_failure_streak()
+        return payload
+
     return None
 
 
@@ -1650,6 +1672,69 @@ def send_telegram(
     return True
 
 
+# --------------------------------------------------------------------------- #
+# Failure alerting (once per IST day, so the 15-minute cadence cannot flood chat)
+# --------------------------------------------------------------------------- #
+
+SCRAPER_FAILURE_MESSAGE = (
+    "⚠️ Alert: Scraper failed to fetch data today. Check GitHub Actions."
+)
+
+# One failed request is noise; three failures in a row is a pattern worth
+# waking someone for.
+NSE_FAILURE_ALERT_AFTER = 3
+
+# Set once in main() so the low-level helpers can alert without threading a
+# Config argument through every call site.
+ALERT_CONFIG: Config | None = None
+
+# Consecutive NSE failures since the last successful response.
+_NSE_FAILURE_STREAK = 0
+
+# (reason key, ISO date) pairs already reported by this process.
+_ALERTED: set[tuple[str, str]] = set()
+
+
+def send_scrape_failure_alert(reason: str, key: str = "fetch") -> bool:
+    """Tell the admin the sync could not do its job.
+
+    The workflow runs every 15 minutes, so each (key, day) pair is reported at
+    most once per IST day: one actionable message instead of dozens of
+    identical ones. Returns True only when Telegram accepted it.
+    """
+    if ALERT_CONFIG is None:
+        LOG.error("Scraper failure (%s): %s", key, reason)
+        return False
+
+    day = now_ist().date().isoformat()
+    if (key, day) in _ALERTED:
+        LOG.debug("Scraper failure (%s) already reported today: %s", key, reason)
+        return False
+    _ALERTED.add((key, day))
+
+    LOG.error("Scraper failure (%s): %s", key, reason)
+    return send_telegram(
+        ALERT_CONFIG, SCRAPER_FAILURE_MESSAGE, "Scraper failure"
+    )
+
+
+def record_nse_failure(reason: str) -> None:
+    """Count consecutive NSE failures; alert once three have stacked up."""
+    global _NSE_FAILURE_STREAK
+    _NSE_FAILURE_STREAK += 1
+    if _NSE_FAILURE_STREAK >= NSE_FAILURE_ALERT_AFTER:
+        send_scrape_failure_alert(
+            f"NSE failed {_NSE_FAILURE_STREAK} times in a row: {reason}",
+            key="nse",
+        )
+
+
+def reset_nse_failure_streak() -> None:
+    """A working NSE response clears the consecutive-failure counter."""
+    global _NSE_FAILURE_STREAK
+    _NSE_FAILURE_STREAK = 0
+
+
 def _num(value: Any, digits: int = 2) -> str:
     """Compact number for a message: 12.50 -> "12.5", missing -> "—"."""
     number = to_float(value)
@@ -1712,8 +1797,16 @@ def send_ipo_alerts(client: Client, config: Config) -> dict[str, int]:
     """T-1 and T-10 minute reminders for issues that are about to open.
 
     T-1 fires when open_date is tomorrow. T-10 fires only inside the
-    09:50-09:59 IST window on the opening day itself. Each issue is flagged in
-    the table the moment Telegram accepts the message, so no alert repeats.
+    09:45-09:59 IST window on the opening day itself.
+
+    The workflow cron runs every 15 minutes (:00, :15, :30, :45), so a window
+    of 09:50-09:59 contained no scheduled run and the reminder only went out
+    when a run happened to be delayed. Opening the window at 09:45 guarantees
+    the :45 run always claims the alert, still 15 minutes before the 10:00
+    opening, and the strict upper bound keeps it out of the 10:00 run.
+
+    Each issue is flagged in the table the moment Telegram accepts the
+    message, so no alert repeats.
     """
     counts = {"t1": 0, "t10": 0}
 
@@ -1733,7 +1826,8 @@ def send_ipo_alerts(client: Client, config: Config) -> dict[str, int]:
 
     current = now_ist()
     today = current.date()
-    in_ten_minute_window = time_of_day(9, 50) <= current.time() <= time_of_day(9, 59)
+    # 09:45 inclusive, 10:00 exclusive: matches the 15-minute cron cadence.
+    in_ten_minute_window = time_of_day(9, 45) <= current.time() < time_of_day(10, 0)
 
     for row in rows:
         open_date = parse_iso_date(row.get("open_date"))
@@ -2103,6 +2197,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    # Module-global so the NSE helper can raise the failure alert itself.
+    global ALERT_CONFIG
+
     # Supports scraper/.env no matter which directory the command runs from.
     load_dotenv(Path(__file__).resolve().parent / ".env")
     load_dotenv()
@@ -2118,11 +2215,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = config_from_env(dry_run=args.dry_run, skip_ai=args.skip_ai)
         if args.skip_alerts:
             config = replace(config, telegram_alerts=False)
+        # From here on the helpers can raise the once-a-day failure alert.
+        ALERT_CONFIG = config
         client = create_client(config.supabase_url, config.service_role_key)
     except SystemExit:
         raise
     except Exception as error:  # noqa: BLE001
         LOG.error("Could not create the Supabase client: %s", error)
+        send_scrape_failure_alert(f"Supabase client failed: {error}", key="database")
         return 1
 
     started = time.monotonic()
@@ -2152,8 +2252,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         alerts_sent += int(portfolio_summary.get("alerts", 0))
         catalog_summary = sync_market_catalog(client, config)
         alerts_sent += int(catalog_summary.get("alerts", 0))
-    except Exception:
+    except Exception as error:
+        # A failed database update is exactly what the admin needs to know
+        # about: the sync cannot be trusted until the next clean run.
         LOG.exception("Market sync aborted.")
+        send_scrape_failure_alert(
+            f"Database update failed: {error}", key="database"
+        )
         return 1
 
     LOG.info(
